@@ -1,7 +1,7 @@
 # Project S.A.F.E. - Specification
 
 ## 1) Project Title
-**S.A.F.E.** (Synthetic Audio Fraud Engine)
+**S.A.F.E.** ( Synthetic Audio Fraud Engine or Spectral Analysis for Fraud Elimination )
 
 ## 2) Problem Statement
 AI voice cloning enables distress scams where attackers mimic family members and demand urgent money transfers.  
