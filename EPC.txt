@@ -1,0 +1,17 @@
+[Event] Project initiated
+-> [Function] Collect dataset
+-> [Event] Dataset collected
+-> [Function] Preprocess and clean data
+-> [Event] Data preprocessed
+-> [Function] Perform exploratory data analysis (EDA)
+-> [Event] EDA completed
+-> [Function] Build supervised learning model
+-> [Event] Supervised model built
+-> [Function] Build unsupervised learning model
+-> [Event] Unsupervised model built
+-> [Function] Build semi-supervised learning model
+-> [Event] All models built
+-> [Function] Evaluate and compare models
+-> [Event] Models evaluated
+-> [Function] Generate final report
+-> [Event] Project completed
