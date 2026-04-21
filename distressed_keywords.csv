@@ -1,0 +1,172 @@
+keyword,category,risk_level
+otp,financial_fraud,high
+upi pin,financial_fraud,critical
+cvv,financial_fraud,high
+account block,financial_fraud,high
+account suspended,financial_fraud,high
+unauthorized transaction,financial_fraud,critical
+verify your identity,financial_fraud,medium
+kyc update,financial_fraud,medium
+pan card link,financial_fraud,medium
+aadhar link,financial_fraud,medium
+bank manager,financial_fraud,medium
+credit card limit,financial_fraud,medium
+anydesk,financial_fraud,critical
+teamviewer,financial_fraud,critical
+screen share,financial_fraud,critical
+remote access,financial_fraud,critical
+download app,financial_fraud,high
+lottery,financial_fraud,high
+prize money,financial_fraud,medium
+kbc winner,financial_fraud,high
+jio tower,financial_fraud,medium
+refund,financial_fraud,medium
+urgent transfer,financial_fraud,high
+net banking password,financial_fraud,critical
+debit card number,financial_fraud,critical
+bank account number,financial_fraud,high
+ifsc code,financial_fraud,high
+link aadhaar,financial_fraud,medium
+atm pin,financial_fraud,critical
+rbi helpline,financial_fraud,medium
+income tax refund,financial_fraud,high
+tds refund,financial_fraud,high
+google pay link,financial_fraud,critical
+phonepe request,financial_fraud,critical
+paytm link,financial_fraud,high
+cashback offer,financial_fraud,medium
+qr code scan,financial_fraud,high
+collect request,financial_fraud,critical
+fedex parcel,customs_fraud,high
+dhl package,customs_fraud,high
+customs officer,customs_fraud,high
+illegal import,customs_fraud,critical
+illegal parcel,customs_fraud,critical
+money laundering,customs_fraud,critical
+rbi penalty,customs_fraud,high
+clearance fee,customs_fraud,high
+foreign currency,customs_fraud,high
+gold seized,customs_fraud,high
+package detained,customs_fraud,high
+narcotics found,customs_fraud,critical
+duty payment,customs_fraud,medium
+airport customs,customs_fraud,medium
+interpol,customs_fraud,critical
+drugs,police_fraud,critical
+narcotics,police_fraud,critical
+arrest warrant,police_fraud,critical
+warrant issued,police_fraud,critical
+police station,police_fraud,high
+cbi,police_fraud,critical
+skype interrogation,police_fraud,critical
+fir register,police_fraud,high
+supreme court,police_fraud,high
+cyber cell,police_fraud,high
+digital arrest,police_fraud,critical
+telecom department,police_fraud,medium
+sim block,police_fraud,high
+number will be blocked,police_fraud,high
+ed officer,police_fraud,critical
+enforcement directorate,police_fraud,critical
+income tax officer,police_fraud,high
+nbfc scam,police_fraud,high
+money mule,police_fraud,critical
+hawala,police_fraud,critical
+terrorist link,police_fraud,critical
+aadhaar misuse,police_fraud,high
+video call,cyber_blackmail,high
+recording,cyber_blackmail,critical
+viral kar dunga,cyber_blackmail,critical
+compromised video,cyber_blackmail,critical
+social media leak,cyber_blackmail,critical
+pay immediately,cyber_blackmail,high
+nude,cyber_blackmail,critical
+facebook pe dal dunga,cyber_blackmail,critical
+delete karne ke paise,cyber_blackmail,high
+screenshot le liya,cyber_blackmail,critical
+whatsapp pe bhejunga,cyber_blackmail,critical
+deepfake,cyber_blackmail,critical
+intimate video,cyber_blackmail,critical
+instagram viral,cyber_blackmail,high
+family ko dikhaunga,cyber_blackmail,critical
+accident,family_emergency,critical
+car accident,family_emergency,critical
+hospital me,family_emergency,critical
+hospitalized,family_emergency,critical
+admit hai,family_emergency,critical
+icu me,family_emergency,critical
+bachao,family_emergency,critical
+kidnap,family_emergency,critical
+kidnapped,family_emergency,critical
+urgent paise,family_emergency,high
+need money urgently,family_emergency,high
+galti ho gayi,family_emergency,medium
+chhod do,family_emergency,high
+khoon,family_emergency,critical
+police ne pakda,family_emergency,high
+raste me accident,family_emergency,high
+bacha lo,family_emergency,critical
+beta phas gaya,family_emergency,critical
+beti phas gayi,family_emergency,critical
+ransom,family_emergency,critical
+youtube like,task_fraud,high
+telegram group,task_fraud,high
+part time job,task_fraud,medium
+prepaid task,task_fraud,critical
+crypto investment,task_fraud,high
+investment opportunity,task_fraud,medium
+crypto wallet,task_fraud,high
+double return,task_fraud,high
+work from home earning,task_fraud,high
+daily task reward,task_fraud,high
+app rating task,task_fraud,medium
+hotel booking task,task_fraud,high
+product review job,task_fraud,medium
+usdt payment,task_fraud,critical
+binance transfer,task_fraud,critical
+guaranteed return,task_fraud,high
+bijli bill,utility_fraud,high
+electricity disconnect,utility_fraud,critical
+electricity suspension,utility_fraud,critical
+power cut,utility_fraud,medium
+meter update,utility_fraud,medium
+bses officer,utility_fraud,high
+gas connection block,utility_fraud,high
+broadband disconnect,utility_fraud,high
+water supply cut,utility_fraud,medium
+gas agency call,utility_fraud,medium
+dg set meter,utility_fraud,medium
+loan repayment,loan_app_fraud,high
+pay your emi,loan_app_fraud,medium
+contact list,loan_app_fraud,critical
+defaulter,loan_app_fraud,medium
+mummy papa ko call,loan_app_fraud,critical
+nude morph,loan_app_fraud,critical
+recovery agent,loan_app_fraud,high
+court notice,loan_app_fraud,high
+emi bounce,loan_app_fraud,medium
+legal action,loan_app_fraud,high
+criminal complaint,loan_app_fraud,high
+share contacts,loan_app_fraud,critical
+zomato refund,delivery_fraud,medium
+swiggy delivery,delivery_fraud,medium
+blinkit order,delivery_fraud,medium
+delivery pin,delivery_fraud,high
+address update,delivery_fraud,medium
+package undelivered,delivery_fraud,medium
+rescheduling fee,delivery_fraud,high
+amazon delivery agent,delivery_fraud,medium
+flipkart return,delivery_fraud,medium
+cod reversal,delivery_fraud,high
+demat block,trading_fraud,high
+ipo allotment,trading_fraud,medium
+dabba trading,trading_fraud,critical
+sebi notice,trading_fraud,high
+algo trading bot,trading_fraud,high
+stock tip whatsapp,trading_fraud,high
+sure shot returns,trading_fraud,critical
+f&o fraud,trading_fraud,critical
+options profit guaranteed,trading_fraud,critical
+demat kyc pending,trading_fraud,medium
+broker suspended,trading_fraud,high
+sensex jackpot,trading_fraud,high
