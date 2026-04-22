@@ -1,3 +1,29 @@
-# Python Virtual Environments
-
+# Python virtual environments
+env/
+venv/
+.venv/
 envSafeVone/
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Test and property-testing caches
+.pytest_cache/
+.hypothesis/
+
+# Tooling and local environment files
+.python-version
+.env
+.env.*
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# ML generated artifacts
+models/*.joblib
+models/training_report.json

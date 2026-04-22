@@ -1,0 +1,69 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+
+    {
+      "label": "ML: Init project",
+      "type": "shell",
+      "command": "bash .vscode/scripts/ml_init.sh",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "ML: Setup environment",
+      "type": "shell",
+      "command": "make setup",
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+
+    {
+      "label": "ML: Train",
+      "type": "shell",
+      "command": "make train",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+
+    {
+      "label": "ML: Test",
+      "type": "shell",
+      "command": "pytest tests/ -v --tb=short",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always" }
+    },
+
+    {
+      "label": "ML: Lint + format",
+      "type": "shell",
+      "command": "ruff check src/ --fix && black src/",
+      "group": "build",
+      "presentation": { "reveal": "silent" }
+    },
+
+    {
+      "label": "ML: MLflow UI",
+      "type": "shell",
+      "command": "mlflow ui --port 5000",
+      "isBackground": true,
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "ML: DVC pull data",
+      "type": "shell",
+      "command": "dvc pull",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    }
+
+  ]
+}

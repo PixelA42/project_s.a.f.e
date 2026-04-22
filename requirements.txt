@@ -10,3 +10,8 @@ sqlalchemy==2.0.31
 psycopg2-binary==2.9.9
 python-multipart==0.0.9
 librosa==0.10.2.post1
+openai-whisper==20250625
+spacy==3.8.11
+nltk==3.9.2
+pytest==9.0.3
+hypothesis==6.152.1
