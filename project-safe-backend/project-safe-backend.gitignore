@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment / secrets — NEVER commit real keys
+.env
+
+# ML model files (often large — store in cloud storage instead)
+*.pkl
+*.h5
+*.pt
+*.pth
+*.onnx
+models/weights/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

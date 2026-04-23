@@ -16,6 +16,8 @@ env/
 venv/
 .venv/
 envSafeVone/
+project-safe-backend\.env
+project-safe-backend\venv
 
 # Build and packaging output
 build/
@@ -38,3 +40,6 @@ labels.csv
 projectsafe/node_modules/
 projectsafe/dist/
 projectsafe/.vite/
+
+
+
