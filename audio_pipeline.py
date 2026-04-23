@@ -9,8 +9,8 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-AUDIO_DIR = "audio_dataset"
-OUTPUT_DIR = "spectrograms"
+AUDIO_DIR = "Testing_data"
+OUTPUT_DIR = "SPECTROGRAMS"
 LABELS_CSV = "labels.csv"
 STATS_FILE = "dataset_stats.txt"
 
