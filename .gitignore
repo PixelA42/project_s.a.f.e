@@ -34,3 +34,7 @@ dataset_stats.txt
 spectrograms/
 spectrograms
 labels.csv
+
+projectsafe/node_modules/
+projectsafe/dist/
+projectsafe/.vite/
