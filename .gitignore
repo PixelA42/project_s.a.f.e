@@ -25,3 +25,12 @@ dist/
 # ML generated artifacts
 models/*.joblib
 models/training_report.json
+models/feature_embedding_2d.csv
+models/feature_embedding_2d.png
+tmp_uploaded_spec.png
+dataset_stats.txt
+
+#data
+spectrograms/
+spectrograms
+labels.csv

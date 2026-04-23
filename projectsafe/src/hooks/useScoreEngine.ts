@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { CallState, RiskLabel } from '@/types/score';
-import { fetchMockScore } from '@/mocks/mockResponses';
+import { fetchScore } from '@/api/scoreApi';
 
 const INITIAL_STATE: CallState = {
   uiState: 'loading',
@@ -16,7 +16,7 @@ export function useScoreEngine() {
     setCallState({ uiState: 'loading', data: null, error: null });
 
     try {
-      const response = await fetchMockScore(label);
+      const response = await fetchScore(label);
 
       const uiStateMap: Record<RiskLabel, CallState['uiState']> = {
         HIGH_RISK: 'high_risk',
@@ -31,7 +31,7 @@ export function useScoreEngine() {
       });
     } catch (err) {
       setCallState({
-        uiState: 'safe', // fallback gracefully
+        uiState: 'safe',
         data: null,
         error: err instanceof Error ? err.message : 'Analysis failed',
       });

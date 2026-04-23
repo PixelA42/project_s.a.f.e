@@ -16,25 +16,22 @@ const BG_MAP = {
 
 export default function App() {
   const { callState, analyzeCall, reset } = useScoreEngine();
-  const { uiState, data } = callState;
+  const { uiState, data, error } = callState;
   const isLoading = uiState === 'loading';
+  const footerLabel = import.meta.env.DEV
+    ? 'LIVE API MODE (DEV FALLBACK ENABLED)'
+    : 'LIVE API MODE';
 
   function renderScreen() {
     switch (uiState) {
       case 'loading':
         return <LoadingState />;
       case 'safe':
-        return data ? (
-          <SafeState data={data} onDecline={reset} onAccept={reset} />
-        ) : null;
+        return data ? <SafeState data={data} onDecline={reset} onAccept={reset} /> : null;
       case 'prank':
-        return data ? (
-          <PrankState data={data} onDecline={reset} onAccept={reset} />
-        ) : null;
+        return data ? <PrankState data={data} onDecline={reset} onAccept={reset} /> : null;
       case 'high_risk':
-        return data ? (
-          <HighRiskState data={data} onBlock={reset} />
-        ) : null;
+        return data ? <HighRiskState data={data} onBlock={reset} /> : null;
     }
   }
 
@@ -43,7 +40,6 @@ export default function App() {
       className="min-h-screen flex flex-col items-center justify-center px-4 py-8"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0a0a12 60%)' }}
     >
-      {/* Wordmark */}
       <div className="text-center mb-6">
         <h1 className="font-display text-2xl font-extrabold tracking-tight text-white">
           Project{' '}
@@ -63,19 +59,22 @@ export default function App() {
         </p>
       </div>
 
-      {/* Phone frame */}
       <AnimatePresence mode="wait">
         <PhoneFrame background={BG_MAP[uiState]} key={uiState}>
           {renderScreen()}
         </PhoneFrame>
       </AnimatePresence>
 
-      {/* Dev scenario controls */}
       <DevControls onSimulate={analyzeCall} isLoading={isLoading} />
 
-      {/* Footer */}
+      {error ? (
+        <p className="font-mono text-[10px] tracking-[0.08em] mt-4 text-center" style={{ color: '#f6ad55' }}>
+          {error}
+        </p>
+      ) : null}
+
       <p className="font-mono text-[9px] tracking-[0.15em] mt-6" style={{ color: 'rgba(255,255,255,0.15)' }}>
-        MOCK MODE — BACKEND NOT CONNECTED
+        {footerLabel}
       </p>
     </div>
   );
