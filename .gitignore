@@ -1,7 +1,32 @@
-# Python Virtual Environments
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 
+# Test and property-testing caches
+.pytest_cache/
+.hypothesis/
+
+# Python virtual environments
+.python-version
+.env
+.env.*
+env/
+venv/
+.venv/
 envSafeVone/
 
-#data base
-venv/
+# Build and packaging output
+build/
+dist/
+*.egg-info/
 
+# ML generated artifacts
+models/*.joblib
+models/training_report.json
+
+#Testing_data
+/Testing_data
+/Training_data
+Testing_data_split
