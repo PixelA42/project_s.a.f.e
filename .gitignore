@@ -31,4 +31,14 @@ models/training_report.json
 /Training_data
 Testing_data_split
 
-Unlabled_data
+Unlabeled_data
+Unlabeled_data
+
+spectrograms\ai
+spectrograms\augmented
+spectrograms\human
+
+spectrograms
+
+
+labels.csv
