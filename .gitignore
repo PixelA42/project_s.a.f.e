@@ -1,45 +1,79 @@
-# Python cache artifacts
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python bytecode and tooling caches
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-
-# Test and property-testing caches
+.mypy_cache/
 .pytest_cache/
+.ruff_cache/
 .hypothesis/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
 
-# Python virtual environments
+# Virtual environments and local environment files
 .python-version
 .env
 .env.*
-env/
-venv/
+!.env.example
 .venv/
-envSafeVone/
-project-safe-backend\.env
-project-safe-backend\venv
+venv/
+env/
+ENV/
+/envSafeVone/
+/project-safe-backend/.env
+/project-safe-backend/venv/
 
-# Build and packaging output
+# Packaging and build outputs
 build/
 dist/
+site/
+.eggs/
 *.egg-info/
+pip-wheel-metadata/
 
-# ML generated artifacts
-models/*.joblib
-models/training_report.json
-models/feature_embedding_2d.csv
-models/feature_embedding_2d.png
-tmp_uploaded_spec.png
-dataset_stats.txt
+# Notebook and experiment tracking outputs
+.ipynb_checkpoints/
+wandb/
+mlruns/
+lightning_logs/
 
-#data
-spectrograms/
-spectrograms
-labels.csv
+# Root ML pipeline artifacts and generated data
+/audio_dataset/
+/spectrograms/
+/labels.csv
+/dataset_stats.txt
+/tmp_uploaded_spec.png
+/models/
 
-projectsafe/node_modules/
-projectsafe/dist/
-projectsafe/.vite/
+# Logs and serialized experiment outputs
+*.log
+*.out
+*.err
+*.joblib
+*.pkl
+*.npy
+*.npz
+*.h5
+*.pt
+*.pth
+*.onnx
 
+# Frontend build artifacts in this repo
+/projectsafe/node_modules/
+/projectsafe/dist/
+/projectsafe/.vite/
 
-
+Audios

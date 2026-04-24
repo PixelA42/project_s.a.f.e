@@ -14,43 +14,31 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 
+from config import SETTINGS
+
 from .constants import INTENT_MIN_F1, INTENT_TIMEOUT_SECONDS, SCORE_MAX, SCORE_MIN
 from .errors import AudioProcessingError
 from .types import IntentResult
 
 
+GENERAL_CONFIG = SETTINGS.general
+CORE_CONFIG = SETTINGS.core
+PATHS = SETTINGS.paths
+
+
 class IntentAnalyzer:
     """Core class for intent transcription and scoring workflow."""
 
-    _KEYWORD_WEIGHTS = {
-        "bail": 1.0,
-        "transfer": 1.0,
-        "otp": 0.9,
-        "upi": 1.0,
-        "money": 0.9,
-        "accident": 0.8,
-        "hospital": 0.8,
-        "help": 0.6,
-        "police": 0.7,
-    }
-
-    _TIME_PRESSURE_PHRASES = (
-        ("right now", 0.8),
-        ("asap", 0.8),
-        ("now", 0.4),
-        ("please hurry", 0.9),
-        ("urgent", 0.9),
-        ("call me back", 0.5),
-        ("send money", 1.0),
-    )
+    _KEYWORD_WEIGHTS = dict(CORE_CONFIG.intent_keyword_weights)
+    _TIME_PRESSURE_PHRASES = CORE_CONFIG.intent_time_pressure_phrases
 
     def __init__(
         self,
         timeout_seconds: int = INTENT_TIMEOUT_SECONDS,
-        keywords_csv_path: str = "data_pipeline/distress_keywords_v1.csv",
-        model_path: str = "models/intent_model.joblib",
-        random_state: int = 42,
-        n_clusters: int = 8,
+        keywords_csv_path: str = str(PATHS.intent_keywords_csv_path),
+        model_path: str = str(PATHS.intent_model_path),
+        random_state: int = GENERAL_CONFIG.random_seed,
+        n_clusters: int = CORE_CONFIG.intent_cluster_count,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.keywords_csv_path = keywords_csv_path
@@ -68,7 +56,7 @@ class IntentAnalyzer:
         self.classifier: RandomForestClassifier | None = None
         self.kmeans_model: KMeans | None = None
         self.cluster_distance_thresholds: dict[int, float] = {}
-        self._coercion_label = "coercive"
+        self._coercion_label = CORE_CONFIG.intent_positive_label
 
         self._load_artifacts_if_available()
 
@@ -77,11 +65,13 @@ class IntentAnalyzer:
         try:
             import whisper
 
-            return whisper.load_model("base")
+            return whisper.load_model(CORE_CONFIG.intent_whisper_model_name)
         except Exception as exc:
             raise AudioProcessingError(
                 error_code="WHISPER_INIT_FAILED",
-                description="Failed to initialize Whisper base model.",
+                description=(
+                    f"Failed to initialize Whisper {CORE_CONFIG.intent_whisper_model_name} model."
+                ),
             ) from exc
 
     def _safe_load_spacy_model(self) -> Any:
@@ -152,7 +142,7 @@ class IntentAnalyzer:
         self.classifier = artifact.get("classifier")
         self.kmeans_model = artifact.get("kmeans")
         self.cluster_distance_thresholds = artifact.get("cluster_distance_thresholds", {})
-        self._coercion_label = artifact.get("coercion_label", "coercive")
+        self._coercion_label = artifact.get("coercion_label", CORE_CONFIG.intent_positive_label)
 
     def _validate_audio_file(self, audio_file_path: str) -> None:
         if not audio_file_path:
@@ -195,17 +185,21 @@ class IntentAnalyzer:
                 raise RuntimeError("nltk unavailable")
             tokens = self._nltk.word_tokenize(text)
             if any(token in {"now", "urgent", "immediately", "quickly"} for token in tokens):
-                score += 0.5
+                score += CORE_CONFIG.intent_nltk_urgency_bonus
         except Exception:
             tokens = text.split()
             if any(token in {"now", "urgent", "immediately", "quickly"} for token in tokens):
-                score += 0.3
+                score += CORE_CONFIG.intent_fallback_urgency_bonus
 
         try:
             if self._nlp is None:
                 raise RuntimeError("spacy unavailable")
             doc = self._nlp(text)
-            imperative_bonus = sum(0.2 for token in doc if token.pos_ == "VERB" and token.tag_ == "VB")
+            imperative_bonus = sum(
+                CORE_CONFIG.intent_imperative_verb_bonus
+                for token in doc
+                if token.pos_ == "VERB" and token.tag_ == "VB"
+            )
             score += imperative_bonus
         except Exception:
             pass
@@ -213,7 +207,11 @@ class IntentAnalyzer:
         return score
 
     @staticmethod
-    def _normalize_score(raw_score: float, min_raw: float = 0.0, max_raw: float = 5.0) -> float:
+    def _normalize_score(
+        raw_score: float,
+        min_raw: float = CORE_CONFIG.intent_normalize_min_raw,
+        max_raw: float = CORE_CONFIG.intent_normalize_max_raw,
+    ) -> float:
         clipped_raw = max(min_raw, min(raw_score, max_raw))
         scaled = (clipped_raw - min_raw) / (max_raw - min_raw)
         return float(np.clip(scaled * 100.0, SCORE_MIN, SCORE_MAX))
@@ -249,7 +247,7 @@ class IntentAnalyzer:
     def train(
         self,
         labeled_transcripts: Iterable[dict[str, Any]],
-        test_size: float = 0.2,
+        test_size: float = CORE_CONFIG.intent_test_split_ratio,
     ) -> float:
         samples = list(labeled_transcripts)
         if len(samples) < 2:
@@ -261,7 +259,10 @@ class IntentAnalyzer:
         texts = [self._extract_transcript(sample) for sample in samples]
         labels = [self._extract_label(sample) for sample in samples]
 
-        self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
+        self.vectorizer = TfidfVectorizer(
+            ngram_range=CORE_CONFIG.intent_tfidf_ngram_range,
+            min_df=CORE_CONFIG.intent_tfidf_min_df,
+        )
         x = self.vectorizer.fit_transform(texts)
         y = np.array(labels)
 
@@ -274,9 +275,9 @@ class IntentAnalyzer:
         )
 
         self.classifier = RandomForestClassifier(
-            n_estimators=300,
+            n_estimators=CORE_CONFIG.intent_random_forest_n_estimators,
             random_state=self.random_state,
-            n_jobs=-1,
+            n_jobs=CORE_CONFIG.intent_random_forest_n_jobs,
         )
         self.classifier.fit(x_train, y_train)
 
@@ -296,7 +297,7 @@ class IntentAnalyzer:
         self.kmeans_model = KMeans(
             n_clusters=min(self.n_clusters, max(1, dense_train.shape[0])),
             random_state=self.random_state,
-            n_init="auto",
+            n_init=CORE_CONFIG.intent_kmeans_n_init,
         )
         self.kmeans_model.fit(dense_train)
 
@@ -308,7 +309,8 @@ class IntentAnalyzer:
             center = self.kmeans_model.cluster_centers_[cluster_id]
             distances = np.linalg.norm(cluster_vectors - center, axis=1)
             self.cluster_distance_thresholds[int(cluster_id)] = float(
-                distances.mean() + 2.0 * distances.std(ddof=0)
+                distances.mean()
+                + CORE_CONFIG.intent_anomaly_std_multiplier * distances.std(ddof=0)
             )
 
         os.makedirs(os.path.dirname(self.model_path) or ".", exist_ok=True)

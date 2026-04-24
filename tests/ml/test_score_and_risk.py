@@ -1,5 +1,6 @@
 from hypothesis import given, settings, strategies as st
 
+from config import SETTINGS
 from coreML.risk_classifier import RiskClassifier, RiskLabel
 from coreML.score_fuser import ScoreFuser
 
@@ -12,7 +13,10 @@ from coreML.score_fuser import ScoreFuser
 def test_score_fusion_formula_invariant(spectral, intent):
     fuser = ScoreFuser()
     fused = fuser.fuse(spectral, intent)
-    expected = (0.70 * spectral) + (0.30 * intent)
+    expected = (
+        SETTINGS.fusion.spectral_weight * spectral
+        + SETTINGS.fusion.intent_weight * intent
+    )
 
     assert abs(fused - expected) < 1e-9
     assert 0.0 <= fused <= 100.0

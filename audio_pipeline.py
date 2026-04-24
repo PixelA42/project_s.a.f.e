@@ -1,211 +1,251 @@
-import os
-import numpy as np
+"""Audio to spectrogram dataset generation for the ML pipeline."""
+
+from __future__ import annotations
+
+import warnings
+from pathlib import Path
+
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-import soundfile as sf
-import warnings
 
-warnings.filterwarnings('ignore')
+from config import SETTINGS
 
-AUDIO_DIR = "audio_dataset"
-OUTPUT_DIR = "spectrograms"
-LABELS_CSV = "labels.csv"
-STATS_FILE = "dataset_stats.txt"
 
-DURATION = 5
-SAMPLE_RATE = 22050
-N_MELS = 128
-IMAGE_SIZE = 224
+warnings.filterwarnings("ignore")
 
-DO_AUGMENTATION = True
-AUGMENT_COPIES = 4
+AUDIO_CONFIG = SETTINGS.audio
+GENERAL_CONFIG = SETTINGS.general
+PATHS = SETTINGS.paths
 
-COLORMAP = 'magma'
 
-LABEL_MAP = {'human': 0, 'ai': 1}
-
-AUG_TYPES = ['noise', 'pitch_up', 'pitch_down', 'stretch', 'volume_up', 'volume_down']
-
-def load_audio(filepath):
+def load_audio(filepath: Path) -> tuple[np.ndarray | None, int | None]:
     try:
-        y, sr = librosa.load(filepath, sr=SAMPLE_RATE, duration=DURATION, mono=True)
-        if len(y) < sr:
+        audio_signal, sample_rate = librosa.load(
+            str(filepath),
+            sr=AUDIO_CONFIG.sample_rate,
+            duration=AUDIO_CONFIG.clip_duration_seconds,
+            mono=True,
+        )
+        if len(audio_signal) < sample_rate:
             print(f"  [SKIP] Too short: {filepath}")
             return None, None
-        return y, sr
-    except Exception as e:
-        print(f"  [ERROR] Could not load {filepath}: {e}")
+        return audio_signal, sample_rate
+    except Exception as exc:
+        print(f"  [ERROR] Could not load {filepath}: {exc}")
         return None, None
 
-def audio_to_mel_spectrogram(y, sr):
-    mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=N_MELS, fmax=8000)
-    mel_db = librosa.power_to_db(mel, ref=np.max)
-    return mel_db
 
-def save_spectrogram_image(mel_db, sr, output_path):
-    dpi = IMAGE_SIZE / 2.24
-    fig = plt.figure(figsize=(2.24, 2.24), dpi=dpi)
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.axis('off')
-    librosa.display.specshow(mel_db, sr=sr, cmap=COLORMAP, ax=ax)
-    plt.savefig(output_path, bbox_inches='tight', pad_inches=0)
+def audio_to_mel_spectrogram(audio_signal: np.ndarray, sample_rate: int) -> np.ndarray:
+    mel = librosa.feature.melspectrogram(
+        y=audio_signal,
+        sr=sample_rate,
+        n_mels=AUDIO_CONFIG.n_mels,
+        fmax=AUDIO_CONFIG.mel_fmax,
+    )
+    return librosa.power_to_db(mel, ref=np.max)
+
+
+def save_spectrogram_image(mel_db: np.ndarray, sample_rate: int, output_path: Path) -> None:
+    fig = plt.figure(
+        figsize=(AUDIO_CONFIG.figure_size_inches, AUDIO_CONFIG.figure_size_inches),
+        dpi=AUDIO_CONFIG.spectrogram_dpi,
+    )
+    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
+    ax.axis("off")
+    librosa.display.specshow(mel_db, sr=sample_rate, cmap=AUDIO_CONFIG.colormap, ax=ax)
+    plt.savefig(output_path, bbox_inches="tight", pad_inches=0)
     plt.close(fig)
 
-def augment_audio(y, sr, aug_type):
-    if aug_type == 'noise':
-        noise = np.random.randn(len(y)) * 0.005
-        return np.clip(y + noise, -1.0, 1.0)
-    elif aug_type == 'pitch_up':
-        return librosa.effects.pitch_shift(y, sr=sr, n_steps=2)
-    elif aug_type == 'pitch_down':
-        return librosa.effects.pitch_shift(y, sr=sr, n_steps=-2)
-    elif aug_type == 'stretch':
-        y_stretch = librosa.effects.time_stretch(y, rate=0.85)
-        if len(y_stretch) > len(y):
-            return y_stretch[:len(y)]
-        else:
-            return np.pad(y_stretch, (0, len(y) - len(y_stretch)))
-    elif aug_type == 'volume_up':
-        return np.clip(y * 1.5, -1.0, 1.0)
-    elif aug_type == 'volume_down':
-        return y * 0.5
-    else:
-        return y
 
-def process_dataset():
-    records = []
+def augment_audio(
+    audio_signal: np.ndarray,
+    sample_rate: int,
+    augmentation_type: str,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    if augmentation_type == "noise":
+        noise = rng.normal(
+            loc=0.0,
+            scale=AUDIO_CONFIG.augmentation_noise_scale,
+            size=len(audio_signal),
+        )
+        return np.clip(audio_signal + noise, -1.0, 1.0)
+    if augmentation_type == "pitch_up":
+        return librosa.effects.pitch_shift(
+            audio_signal,
+            sr=sample_rate,
+            n_steps=AUDIO_CONFIG.augmentation_pitch_up_steps,
+        )
+    if augmentation_type == "pitch_down":
+        return librosa.effects.pitch_shift(
+            audio_signal,
+            sr=sample_rate,
+            n_steps=AUDIO_CONFIG.augmentation_pitch_down_steps,
+        )
+    if augmentation_type == "stretch":
+        stretched = librosa.effects.time_stretch(
+            audio_signal,
+            rate=AUDIO_CONFIG.augmentation_time_stretch_rate,
+        )
+        if len(stretched) > len(audio_signal):
+            return stretched[: len(audio_signal)]
+        return np.pad(stretched, (0, len(audio_signal) - len(stretched)))
+    if augmentation_type == "volume_up":
+        return np.clip(audio_signal * AUDIO_CONFIG.augmentation_volume_up_gain, -1.0, 1.0)
+    if augmentation_type == "volume_down":
+        return audio_signal * AUDIO_CONFIG.augmentation_volume_down_gain
+    return audio_signal
 
-    for category in ['human', 'ai']:
-        label = LABEL_MAP[category]
-        audio_folder = os.path.join(AUDIO_DIR, category)
-        spec_folder = os.path.join(OUTPUT_DIR, category)
-        aug_folder = os.path.join(OUTPUT_DIR, 'augmented', category)
 
-        os.makedirs(spec_folder, exist_ok=True)
-        if DO_AUGMENTATION:
-            os.makedirs(aug_folder, exist_ok=True)
+def process_dataset() -> list[dict[str, str | int]]:
+    records: list[dict[str, str | int]] = []
+    rng = np.random.default_rng(GENERAL_CONFIG.random_seed)
+    augmentation_types = AUDIO_CONFIG.augmentation_types[: AUDIO_CONFIG.augmentation_copies]
 
-        if not os.path.exists(audio_folder):
+    for category in AUDIO_CONFIG.categories:
+        label = AUDIO_CONFIG.label_map[category]
+        audio_folder = PATHS.audio_dataset_dir / category
+        spectrogram_folder = PATHS.spectrogram_dir / category
+        augmented_folder = PATHS.spectrogram_dir / "augmented" / category
+
+        spectrogram_folder.mkdir(parents=True, exist_ok=True)
+        if AUDIO_CONFIG.augmentation_enabled:
+            augmented_folder.mkdir(parents=True, exist_ok=True)
+
+        if not audio_folder.exists():
             print(f"\n[WARNING] Folder not found: {audio_folder}")
             print(f"  Please create it and add your {category} audio files.")
             continue
 
-        audio_files = [
-            f for f in os.listdir(audio_folder)
-            if f.lower().endswith(('.mp3', '.wav', '.flac', '.ogg', '.m4a'))
-        ]
+        audio_files = sorted(
+            file_path
+            for file_path in audio_folder.iterdir()
+            if file_path.is_file() and file_path.suffix.lower() in AUDIO_CONFIG.supported_extensions
+        )
 
         if not audio_files:
             print(f"\n[WARNING] No audio files found in {audio_folder}")
             continue
 
-        print(f"\n{'='*50}")
+        print(f"\n{'=' * 50}")
         print(f"  Processing {category.upper()} audio ({len(audio_files)} files)")
-        print(f"{'='*50}")
+        print(f"{'=' * 50}")
 
-        for i, filename in enumerate(audio_files, 1):
-            filepath = os.path.join(audio_folder, filename)
-            base_name = os.path.splitext(filename)[0]
+        for index, filepath in enumerate(audio_files, start=1):
+            print(f"  [{index}/{len(audio_files)}] {filepath.name}")
 
-            print(f"  [{i}/{len(audio_files)}] {filename}")
-
-            y, sr = load_audio(filepath)
-            if y is None:
+            audio_signal, sample_rate = load_audio(filepath)
+            if audio_signal is None:
                 continue
 
-            out_filename = f"{base_name}.png"
-            out_path = os.path.join(spec_folder, out_filename)
-            mel_db = audio_to_mel_spectrogram(y, sr)
-            save_spectrogram_image(mel_db, sr, out_path)
+            mel_db = audio_to_mel_spectrogram(audio_signal, sample_rate)
+            output_path = spectrogram_folder / f"{filepath.stem}.png"
+            save_spectrogram_image(mel_db, sample_rate, output_path)
 
-            records.append({
-                'file_name': out_filename,
-                'file_path': out_path,
-                'label': label,
-                'category': category,
-                'source': 'original',
-                'aug_type': 'none',
-                'original_audio': filename
-            })
-            print(f"    ✓ Spectrogram saved")
+            records.append(
+                {
+                    "file_name": output_path.name,
+                    "file_path": str(output_path),
+                    "label": label,
+                    "category": category,
+                    "source": "original",
+                    "aug_type": "none",
+                    "original_audio": filepath.name,
+                }
+            )
+            print("    [OK] Spectrogram saved")
 
-            if DO_AUGMENTATION:
-                aug_types_to_use = AUG_TYPES[:AUGMENT_COPIES]
-                for aug_type in aug_types_to_use:
-                    y_aug = augment_audio(y, sr, aug_type)
-                    mel_aug = audio_to_mel_spectrogram(y_aug, sr)
+            if AUDIO_CONFIG.augmentation_enabled:
+                for augmentation_type in augmentation_types:
+                    augmented_signal = augment_audio(
+                        audio_signal,
+                        sample_rate,
+                        augmentation_type,
+                        rng,
+                    )
+                    augmented_mel = audio_to_mel_spectrogram(augmented_signal, sample_rate)
+                    augmented_path = augmented_folder / f"{filepath.stem}_{augmentation_type}.png"
+                    save_spectrogram_image(augmented_mel, sample_rate, augmented_path)
 
-                    aug_filename = f"{base_name}_{aug_type}.png"
-                    aug_path = os.path.join(aug_folder, aug_filename)
-                    save_spectrogram_image(mel_aug, sr, aug_path)
-
-                    records.append({
-                        'file_name': aug_filename,
-                        'file_path': aug_path,
-                        'label': label,
-                        'category': category,
-                        'source': 'augmented',
-                        'aug_type': aug_type,
-                        'original_audio': filename
-                    })
-                print(f"    ✓ {len(aug_types_to_use)} augmented versions saved")
+                    records.append(
+                        {
+                            "file_name": augmented_path.name,
+                            "file_path": str(augmented_path),
+                            "label": label,
+                            "category": category,
+                            "source": "augmented",
+                            "aug_type": augmentation_type,
+                            "original_audio": filepath.name,
+                        }
+                    )
+                print(f"    [OK] {len(augmentation_types)} augmented versions saved")
 
     return records
 
-def save_labels(records):
-    df = pd.DataFrame(records)
-    df.to_csv(LABELS_CSV, index=False)
-    print(f"\n✅ Labels saved to {LABELS_CSV} ({len(df)} total records)")
-    return df
 
-def print_summary(df):
-    lines = []
-    lines.append("=" * 50)
-    lines.append("  DATASET SUMMARY")
-    lines.append("=" * 50)
-    lines.append(f"  Total samples       : {len(df)}")
-    lines.append(f"  Human (label=0)     : {len(df[df['label']==0])}")
-    lines.append(f"  AI    (label=1)     : {len(df[df['label']==1])}")
-    lines.append(f"  Original samples    : {len(df[df['source']=='original'])}")
-    lines.append(f"  Augmented samples   : {len(df[df['source']=='augmented'])}")
-    lines.append("")
-    lines.append("  Augmentation breakdown:")
-    for aug_type in df['aug_type'].unique():
-        count = len(df[df['aug_type'] == aug_type])
-        lines.append(f"    {aug_type:<15}: {count}")
-    lines.append("")
-    lines.append("  Output folders:")
-    lines.append(f"    Spectrograms  → {OUTPUT_DIR}/")
-    lines.append(f"    Labels CSV    → {LABELS_CSV}")
-    lines.append("=" * 50)
+def save_labels(records: list[dict[str, str | int]]) -> pd.DataFrame:
+    dataframe = pd.DataFrame(records)
+    dataframe.to_csv(PATHS.labels_csv_path, index=False)
+    print(f"\n[OK] Labels saved to {PATHS.labels_csv_path} ({len(dataframe)} total records)")
+    return dataframe
+
+
+def print_summary(dataframe: pd.DataFrame) -> None:
+    lines = [
+        "=" * 50,
+        "  DATASET SUMMARY",
+        "=" * 50,
+        f"  Total samples       : {len(dataframe)}",
+        f"  Human (label=0)     : {len(dataframe[dataframe['label'] == 0])}",
+        f"  AI    (label=1)     : {len(dataframe[dataframe['label'] == 1])}",
+        f"  Original samples    : {len(dataframe[dataframe['source'] == 'original'])}",
+        f"  Augmented samples   : {len(dataframe[dataframe['source'] == 'augmented'])}",
+        "",
+        "  Augmentation breakdown:",
+    ]
+
+    for augmentation_type in dataframe["aug_type"].unique():
+        count = len(dataframe[dataframe["aug_type"] == augmentation_type])
+        lines.append(f"    {augmentation_type:<15}: {count}")
+
+    lines.extend(
+        [
+            "",
+            "  Output folders:",
+            f"    Spectrograms  -> {PATHS.spectrogram_dir}",
+            f"    Labels CSV    -> {PATHS.labels_csv_path}",
+            "=" * 50,
+        ]
+    )
 
     summary = "\n".join(lines)
     print(summary)
+    PATHS.dataset_stats_path.write_text(summary, encoding="utf-8")
+    print(f"\n[OK] Stats saved to {PATHS.dataset_stats_path}")
 
-    with open(STATS_FILE, 'w', encoding='utf-8') as f:
-        f.write(summary)
-    print(f"\n✅ Stats saved to {STATS_FILE}")
 
 if __name__ == "__main__":
-    print("\n" + "="*50)
-    print("  AUDIO → SPECTROGRAM PIPELINE")
+    print(f"\n{'=' * 50}")
+    print("  AUDIO TO SPECTROGRAM PIPELINE")
     print("  Human vs AI Audio Detection Dataset")
-    print("="*50)
+    print("=" * 50)
 
-    if not os.path.exists(AUDIO_DIR):
-        print(f"\n[ERROR] Audio directory '{AUDIO_DIR}' not found!")
+    if not PATHS.audio_dataset_dir.exists():
+        print(f"\n[ERROR] Audio directory '{PATHS.audio_dataset_dir}' not found.")
         print("Please create this structure:")
-        print(f"\n{AUDIO_DIR}/\n├── human/\n└── ai/\n")
-        exit(1)
+        category_lines = "\n".join(f"|- {category}/" for category in AUDIO_CONFIG.categories)
+        print(f"\n{PATHS.audio_dataset_dir}\n{category_lines}\n")
+        raise SystemExit(1)
 
-    records = process_dataset()
+    dataset_records = process_dataset()
 
-    if not records:
+    if not dataset_records:
         print("\n[ERROR] No files were processed. Check your audio folder.")
-        exit(1)
+        raise SystemExit(1)
 
-    df = save_labels(records)
-    print_summary(df)
-    print("\n🎉 Pipeline complete! Your dataset is ready for ML training.\n")
+    labels_dataframe = save_labels(dataset_records)
+    print_summary(labels_dataframe)
+    print("\nPipeline complete. Dataset artifacts are ready for training.\n")

@@ -14,6 +14,8 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 
+from config import SETTINGS
+
 from .constants import (
     MFCC_N_COEFFICIENTS,
     SCORE_MAX,
@@ -25,6 +27,11 @@ from .errors import AudioProcessingError
 from .types import SpectralResult
 
 
+GENERAL_CONFIG = SETTINGS.general
+CORE_CONFIG = SETTINGS.core
+PATHS = SETTINGS.paths
+
+
 class SpectralAnalyzer:
     """Core class for spectral feature extraction, training, and analysis."""
 
@@ -32,10 +39,10 @@ class SpectralAnalyzer:
         self,
         n_mfcc: int = MFCC_N_COEFFICIENTS,
         timeout_seconds: int = SPECTRAL_TIMEOUT_SECONDS,
-        model_path: str = "models/spectral_model.joblib",
-        training_report_path: str = "models/training_report.json",
-        n_clusters: int = 8,
-        random_state: int = 42,
+        model_path: str = str(PATHS.spectral_model_path),
+        training_report_path: str = str(PATHS.spectral_training_report_path),
+        n_clusters: int = CORE_CONFIG.spectral_cluster_count,
+        random_state: int = GENERAL_CONFIG.random_seed,
     ) -> None:
         self.n_mfcc = n_mfcc
         self.timeout_seconds = timeout_seconds
@@ -47,7 +54,7 @@ class SpectralAnalyzer:
         self.classifier: RandomForestClassifier | GradientBoostingClassifier | None = None
         self.kmeans_model: KMeans | None = None
         self.cluster_distance_thresholds: dict[int, float] = {}
-        self._synthetic_label = "synthetic"
+        self._synthetic_label = CORE_CONFIG.spectral_positive_label
 
         self._load_artifacts_if_available()
 
@@ -66,7 +73,10 @@ class SpectralAnalyzer:
             self.classifier = artifact.get("classifier")
             self.kmeans_model = artifact.get("kmeans")
             self.cluster_distance_thresholds = artifact.get("cluster_distance_thresholds", {})
-            self._synthetic_label = artifact.get("synthetic_label", "synthetic")
+            self._synthetic_label = artifact.get(
+                "synthetic_label",
+                CORE_CONFIG.spectral_positive_label,
+            )
         else:
             self.classifier = artifact
 
@@ -146,8 +156,8 @@ class SpectralAnalyzer:
     def train(
         self,
         labeled_samples: Iterable[dict[str, Any]],
-        model_type: str = "random_forest",
-        test_size: float = 0.2,
+        model_type: str = CORE_CONFIG.spectral_model_type,
+        test_size: float = CORE_CONFIG.spectral_test_split_ratio,
     ) -> float:
         samples = list(labeled_samples)
         if len(samples) < 2:
@@ -181,9 +191,9 @@ class SpectralAnalyzer:
             self.classifier = GradientBoostingClassifier(random_state=self.random_state)
         else:
             self.classifier = RandomForestClassifier(
-                n_estimators=300,
+                n_estimators=CORE_CONFIG.spectral_random_forest_n_estimators,
                 random_state=self.random_state,
-                n_jobs=-1,
+                n_jobs=CORE_CONFIG.spectral_random_forest_n_jobs,
             )
 
         self.classifier.fit(x_train, y_train)
@@ -202,7 +212,7 @@ class SpectralAnalyzer:
         self.kmeans_model = KMeans(
             n_clusters=min(self.n_clusters, max(1, len(x_train))),
             random_state=self.random_state,
-            n_init="auto",
+            n_init=CORE_CONFIG.spectral_kmeans_n_init,
         )
         self.kmeans_model.fit(x_train)
 
@@ -214,7 +224,8 @@ class SpectralAnalyzer:
             center = self.kmeans_model.cluster_centers_[cluster_id]
             distances = np.linalg.norm(cluster_vectors - center, axis=1)
             self.cluster_distance_thresholds[int(cluster_id)] = float(
-                distances.mean() + 2.0 * distances.std(ddof=0)
+                distances.mean()
+                + CORE_CONFIG.spectral_anomaly_std_multiplier * distances.std(ddof=0)
             )
 
         os.makedirs(os.path.dirname(self.model_path) or ".", exist_ok=True)
@@ -251,7 +262,7 @@ class SpectralAnalyzer:
             )
 
         probabilities = self.classifier.predict_proba(feature_vector.reshape(1, -1))[0]
-        classes = getattr(self.classifier, "classes_", np.array(["real", "synthetic"]))
+        classes = getattr(self.classifier, "classes_", np.array(["real", self._synthetic_label]))
         classes_list = [str(item) for item in classes.tolist()]
         if self._synthetic_label in classes_list:
             synthetic_index = classes_list.index(self._synthetic_label)

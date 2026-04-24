@@ -1,21 +1,22 @@
-# save as quick_predict.py (in project root), then run with env python
+"""Run one-off spectrogram inference against the trained baseline model."""
+
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
-import numpy as np
+
 import joblib
 import librosa
 import librosa.display
-import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-TMP_SPEC = PROJECT_ROOT / "tmp_uploaded_spec.png"
+from config import SETTINGS
 
-# Match training preprocessing from audio_pipeline.py and train_model.py
-SAMPLE_RATE = 22050
-DURATION = 5
-N_MELS = 128
-IMAGE_SIZE = 64  # train_model default image-size for features
+
+AUDIO_CONFIG = SETTINGS.audio
+PATHS = SETTINGS.paths
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,13 +33,14 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-def resize_grayscale_image(img: np.ndarray, size: int) -> np.ndarray:
-    if img.ndim == 3:
-        img = img.mean(axis=2)
-    h, w = img.shape
-    row_idx = np.linspace(0, max(0, h - 1), size).astype(int)
-    col_idx = np.linspace(0, max(0, w - 1), size).astype(int)
-    return img[np.ix_(row_idx, col_idx)]
+
+def resize_grayscale_image(image: np.ndarray, size: int) -> np.ndarray:
+    if image.ndim == 3:
+        image = image.mean(axis=2)
+    height, width = image.shape
+    row_idx = np.linspace(0, max(0, height - 1), size).astype(int)
+    col_idx = np.linspace(0, max(0, width - 1), size).astype(int)
+    return image[np.ix_(row_idx, col_idx)]
 
 
 def main() -> None:
@@ -46,58 +48,66 @@ def main() -> None:
     input_audio = Path(args.input).expanduser()
 
     if not input_audio.is_absolute():
-        input_audio = (PROJECT_ROOT / input_audio).resolve()
+        input_audio = (PATHS.project_root / input_audio).resolve()
 
     if not input_audio.is_file():
         raise FileNotFoundError(
             f"Input audio not found: {input_audio}\n"
             "Pass a real file path, for example:\n"
-            "python quick_predict.py --input audio_dataset/human/hr10.m4a.mp3"
+            "python quick_predict.py --input path/to/audio.wav"
         )
 
-    # 1) audio -> mel spectrogram image
-    y, sr = librosa.load(str(input_audio), sr=SAMPLE_RATE, duration=DURATION, mono=True)
-    mel = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=N_MELS, fmax=8000)
+    audio_signal, sample_rate = librosa.load(
+        str(input_audio),
+        sr=AUDIO_CONFIG.sample_rate,
+        duration=AUDIO_CONFIG.clip_duration_seconds,
+        mono=True,
+    )
+    mel = librosa.feature.melspectrogram(
+        y=audio_signal,
+        sr=sample_rate,
+        n_mels=AUDIO_CONFIG.n_mels,
+        fmax=AUDIO_CONFIG.mel_fmax,
+    )
     mel_db = librosa.power_to_db(mel, ref=np.max)
 
-    dpi = 224 / 2.24
-    fig = plt.figure(figsize=(2.24, 2.24), dpi=dpi)
-    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
-    ax.axis("off")
-    librosa.display.specshow(mel_db, sr=sr, cmap="magma", ax=ax)
-    plt.savefig(TMP_SPEC, bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
+    figure = plt.figure(
+        figsize=(AUDIO_CONFIG.figure_size_inches, AUDIO_CONFIG.figure_size_inches),
+        dpi=AUDIO_CONFIG.spectrogram_dpi,
+    )
+    axis = figure.add_axes((0.0, 0.0, 1.0, 1.0))
+    axis.axis("off")
+    librosa.display.specshow(mel_db, sr=sample_rate, cmap=AUDIO_CONFIG.colormap, ax=axis)
+    plt.savefig(PATHS.temp_spectrogram_path, bbox_inches="tight", pad_inches=0)
+    plt.close(figure)
 
-    # 2) extract image features exactly like training
-    img = mpimg.imread(TMP_SPEC).astype(np.float32)
-    img = resize_grayscale_image(img, IMAGE_SIZE)
-    x = img.flatten().reshape(1, -1)
+    image = mpimg.imread(PATHS.temp_spectrogram_path).astype(np.float32)
+    image = resize_grayscale_image(image, AUDIO_CONFIG.feature_image_size)
+    features = image.flatten().reshape(1, -1)
 
-    # 3) load pipeline + model and predict
-    feature_pipe = joblib.load(PROJECT_ROOT / "models" / "spectrogram_feature_pipeline.joblib")
-    model = joblib.load(PROJECT_ROOT / "models" / "spectrogram_supervised_model.joblib")
+    feature_pipeline = joblib.load(PATHS.feature_pipeline_path)
+    model = joblib.load(PATHS.supervised_model_path)
 
-    x_scaled = feature_pipe["scaler"].transform(x)
-    x_reduced = feature_pipe["pca"].transform(x_scaled)
+    features_scaled = feature_pipeline["scaler"].transform(features)
+    features_reduced = feature_pipeline["pca"].transform(features_scaled)
 
-    pred = int(model.predict(x_reduced)[0])
-
+    prediction = int(model.predict(features_reduced)[0])
     if hasattr(model, "predict_proba"):
-        probs = model.predict_proba(x_reduced)[0]
+        probabilities = model.predict_proba(features_reduced)[0]
         classes = list(model.classes_)
-        prob_map = {int(c): float(p) for c, p in zip(classes, probs)}
+        probability_map = {int(label): float(prob) for label, prob in zip(classes, probabilities)}
     else:
-        prob_map = {}
+        probability_map = {}
 
-    label_text = "AI" if pred == 1 else "HUMAN"
+    label_text = "AI" if prediction == 1 else "HUMAN"
 
     print("Input:", input_audio)
-    print("Prediction:", pred, f"({label_text})")
-    print("Probabilities:", prob_map)
-    print("Temp spectrogram:", TMP_SPEC)
+    print("Prediction:", prediction, f"({label_text})")
+    print("Probabilities:", probability_map)
+    print("Temp spectrogram:", PATHS.temp_spectrogram_path)
 
-    if not args.keep_temp and TMP_SPEC.exists():
-        TMP_SPEC.unlink()
+    if not args.keep_temp and PATHS.temp_spectrogram_path.exists():
+        PATHS.temp_spectrogram_path.unlink()
 
 
 if __name__ == "__main__":

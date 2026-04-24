@@ -1,13 +1,18 @@
 """Weighted score fusion for spectral and intent outputs."""
 
-from .constants import SCORE_MAX, SCORE_MIN
+from .constants import (
+    SCORE_FUSION_INTENT_WEIGHT,
+    SCORE_FUSION_SPECTRAL_WEIGHT,
+    SCORE_MAX,
+    SCORE_MIN,
+)
 
 
 class ScoreFuser:
     """Fuse spectral and intent signals into a final risk score."""
 
-    spectral_weight: float = 0.70
-    intent_weight: float = 0.30
+    spectral_weight: float = SCORE_FUSION_SPECTRAL_WEIGHT
+    intent_weight: float = SCORE_FUSION_INTENT_WEIGHT
 
     @staticmethod
     def _validate_score(name: str, value: float) -> None:
