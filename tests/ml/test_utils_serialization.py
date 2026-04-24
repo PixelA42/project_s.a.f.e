@@ -2,6 +2,7 @@ import joblib
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
+from config import SETTINGS
 from coreML.utils import verify_serialization
 
 
@@ -17,7 +18,10 @@ def test_model_serialization_round_trip(tmp_path):
     )
     y_train = np.array([0, 1, 1, 0])
 
-    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    model = RandomForestClassifier(
+        n_estimators=50,
+        random_state=SETTINGS.general.random_seed,
+    )
     model.fit(x_train, y_train)
 
     model_path = tmp_path / "rf.joblib"

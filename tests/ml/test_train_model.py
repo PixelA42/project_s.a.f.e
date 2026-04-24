@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from sklearn.ensemble import RandomForestClassifier
 
+from config import SETTINGS
 import train_model
 
 
@@ -30,7 +31,7 @@ def test_split_without_leakage_stratifies_by_original_audio_label():
     train_df, test_df, split_metrics = train_model._split_without_leakage(
         df,
         test_size=0.25,
-        random_state=42,
+        random_state=SETTINGS.general.random_seed,
     )
 
     assert set(train_df["original_audio"]).isdisjoint(set(test_df["original_audio"]))
@@ -49,7 +50,11 @@ def test_split_without_leakage_rejects_conflicting_group_labels():
     )
 
     with pytest.raises(ValueError, match="exactly one label"):
-        train_model._split_without_leakage(df, test_size=0.3, random_state=42)
+        train_model._split_without_leakage(
+            df,
+            test_size=0.3,
+            random_state=SETTINGS.general.random_seed,
+        )
 
 
 def test_compute_classification_metrics_handles_single_class_probability_output():
@@ -58,7 +63,10 @@ def test_compute_classification_metrics_handles_single_class_probability_output(
     x_test = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32)
     y_test = np.array([0, 1], dtype=np.int64)
 
-    model = RandomForestClassifier(n_estimators=10, random_state=42)
+    model = RandomForestClassifier(
+        n_estimators=10,
+        random_state=SETTINGS.general.random_seed,
+    )
     model.fit(x_train, y_train)
 
     metrics = train_model._compute_classification_metrics(model, x_test, y_test)
@@ -74,7 +82,10 @@ def test_compute_classification_metrics_handles_single_class_probability_output(
 def test_train_unsupervised_allows_single_sample():
     x_train = np.array([[0.1, 0.2, 0.3]], dtype=np.float32)
 
-    model, metrics = train_model._train_unsupervised(x_train, random_state=42)
+    model, metrics = train_model._train_unsupervised(
+        x_train,
+        random_state=SETTINGS.general.random_seed,
+    )
 
     assert int(model.n_clusters) == 1
     assert metrics["n_clusters"] == 1
@@ -95,7 +106,11 @@ def test_train_semisupervised_handles_zero_unlabeled_ratio():
     x_test = x_train.copy()
     y_test = y_train.copy()
 
-    base_model = RandomForestClassifier(n_estimators=20, random_state=42, n_jobs=-1)
+    base_model = RandomForestClassifier(
+        n_estimators=20,
+        random_state=SETTINGS.general.random_seed,
+        n_jobs=-1,
+    )
     model, metrics = train_model._train_semisupervised(
         base_model,
         x_train,
@@ -103,8 +118,8 @@ def test_train_semisupervised_handles_zero_unlabeled_ratio():
         x_test,
         y_test,
         unlabeled_ratio=0.0,
-        threshold=0.85,
-        random_state=42,
+        threshold=SETTINGS.training.pseudo_threshold,
+        random_state=SETTINGS.general.random_seed,
     )
 
     assert hasattr(model, "classes_")
@@ -117,7 +132,10 @@ def test_train_semisupervised_handles_zero_unlabeled_ratio():
 def test_train_semisupervised_rejects_invalid_unlabeled_ratio():
     x_train = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32)
     y_train = np.array([0, 1], dtype=np.int64)
-    base_model = RandomForestClassifier(n_estimators=10, random_state=42)
+    base_model = RandomForestClassifier(
+        n_estimators=10,
+        random_state=SETTINGS.general.random_seed,
+    )
 
     with pytest.raises(ValueError, match="semi-unlabeled-ratio"):
         train_model._train_semisupervised(
@@ -127,6 +145,6 @@ def test_train_semisupervised_rejects_invalid_unlabeled_ratio():
             x_train,
             y_train,
             unlabeled_ratio=1.0,
-            threshold=0.85,
-            random_state=42,
+            threshold=SETTINGS.training.pseudo_threshold,
+            random_state=SETTINGS.general.random_seed,
         )

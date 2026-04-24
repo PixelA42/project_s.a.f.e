@@ -39,6 +39,14 @@ from sklearn.manifold import TSNE
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+from config import SETTINGS
+
+
+GENERAL_CONFIG = SETTINGS.general
+TRAINING_CONFIG = SETTINGS.training
+PATHS = SETTINGS.paths
+AUDIO_CONFIG = SETTINGS.audio
+
 
 def _to_python_scalar(value: Any) -> Any:
 	if isinstance(value, np.generic):
@@ -81,64 +89,105 @@ def _ordered_labels(*label_sets: np.ndarray) -> list[Any]:
 
 
 def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Train S.A.F.E. baseline models from labels.csv")
-	parser.add_argument("--labels", default="labels.csv", help="Path to labels CSV file")
-	parser.add_argument("--models-dir", default="models", help="Directory to write model artifacts")
+	parser = argparse.ArgumentParser(
+		description="Train S.A.F.E. baseline models from spectrogram labels."
+	)
+	parser.add_argument(
+		"--labels",
+		default=str(PATHS.labels_csv_path),
+		help="Path to labels CSV file",
+	)
+	parser.add_argument(
+		"--models-dir",
+		default=str(PATHS.models_dir),
+		help="Directory to write model artifacts",
+	)
 	parser.add_argument(
 		"--report-path",
-		default="models/training_report.json",
+		default=None,
 		help="Path to write training report JSON",
+	)
+	parser.add_argument(
+		"--supervised-model-path",
+		default=None,
+		help="Path to write the supervised model artifact",
+	)
+	parser.add_argument(
+		"--semisupervised-model-path",
+		default=None,
+		help="Path to write the semi-supervised model artifact",
+	)
+	parser.add_argument(
+		"--unsupervised-model-path",
+		default=None,
+		help="Path to write the unsupervised model artifact",
+	)
+	parser.add_argument(
+		"--feature-pipeline-path",
+		default=None,
+		help="Path to write the scaler/PCA feature pipeline artifact",
 	)
 	parser.add_argument(
 		"--image-size",
 		type=int,
-		default=64,
+		default=AUDIO_CONFIG.feature_image_size,
 		help="Square resize target used for feature extraction",
 	)
-	parser.add_argument("--test-size", type=float, default=0.4, help="Held-out split size")
+	parser.add_argument(
+		"--test-size",
+		type=float,
+		default=TRAINING_CONFIG.test_split_ratio,
+		help="Held-out split size",
+	)
 	parser.add_argument(
 		"--pseudo-threshold",
 		type=float,
-		default=0.85,
+		default=TRAINING_CONFIG.pseudo_threshold,
 		help="Confidence threshold used for pseudo-label acceptance",
 	)
 	parser.add_argument(
 		"--semi-unlabeled-ratio",
 		type=float,
-		default=0.3,
+		default=TRAINING_CONFIG.semi_unlabeled_ratio,
 		help="Fraction of training split treated as unlabeled in semi-supervised stage",
 	)
-	parser.add_argument("--random-state", type=int, default=42)
+	parser.add_argument("--random-state", type=int, default=GENERAL_CONFIG.random_seed)
 	parser.add_argument(
 		"--pca-components",
 		type=int,
-		default=40,
+		default=TRAINING_CONFIG.pca_components,
 		help="Target PCA dimensionality for training features",
 	)
 	parser.add_argument(
 		"--embedding-method",
 		choices=["tsne", "umap", "none"],
-		default="tsne",
+		default=TRAINING_CONFIG.embedding_method,
 		help="2D manifold projection method used for plotting",
 	)
 	parser.add_argument(
 		"--embedding-path",
-		default="models/feature_embedding_2d.csv",
+		default=None,
 		help="Path to save per-sample 2D embedding values",
 	)
 	parser.add_argument(
 		"--embedding-plot-path",
-		default="models/feature_embedding_2d.png",
+		default=None,
 		help="Path to save 2D embedding scatter plot",
 	)
 	return parser.parse_args()
+
+
+def _resolve_model_output_path(raw_path: str | None, models_dir: Path, default_path: Path) -> Path:
+	if raw_path:
+		return Path(raw_path)
+	return models_dir / default_path.name
 
 
 def _validate_dataframe(df: pd.DataFrame) -> None:
 	required_columns = {"file_path", "label", "original_audio"}
 	missing = required_columns.difference(df.columns)
 	if missing:
-		raise ValueError(f"labels.csv is missing required columns: {sorted(missing)}")
+		raise ValueError(f"Labels CSV is missing required columns: {sorted(missing)}")
 
 
 def _resize_grayscale_image(img: np.ndarray, size: int) -> np.ndarray:
@@ -222,7 +271,11 @@ def _compute_2d_embedding(
 		raise ValueError(
 			"Need at least 4 samples to compute t-SNE embedding. Use --embedding-method none or umap."
 		)
-	perplexity = min(30, max(3, n_samples // 4), n_samples - 1)
+	perplexity = min(
+		TRAINING_CONFIG.tsne_perplexity_cap,
+		max(3, n_samples // 4),
+		n_samples - 1,
+	)
 	reducer = TSNE(
 		n_components=2,
 		random_state=random_state,
@@ -259,24 +312,24 @@ def _save_embedding_outputs(
 	)
 	embedding_df.to_csv(embedding_path, index=False)
 
-	fig, ax = plt.subplots(figsize=(8, 6))
+	fig, ax = plt.subplots(figsize=TRAINING_CONFIG.embedding_plot_size)
 	for label in sorted(pd.unique(labels)):
 		label_mask = labels == label
 		ax.scatter(
 			embedding[label_mask, 0],
 			embedding[label_mask, 1],
 			label=str(label),
-			alpha=0.75,
-			s=18,
+			alpha=TRAINING_CONFIG.embedding_plot_alpha,
+			s=TRAINING_CONFIG.embedding_plot_marker_size,
 		)
 	ax.set_title(f"2D Feature Projection ({method.upper()} on PCA features)")
 	ax.set_xlabel("Component 1")
 	ax.set_ylabel("Component 2")
 	ax.legend(loc="best")
-	ax.grid(alpha=0.2)
+	ax.grid(alpha=TRAINING_CONFIG.embedding_grid_alpha)
 	fig.tight_layout()
 	embedding_plot_path.parent.mkdir(parents=True, exist_ok=True)
-	fig.savefig(embedding_plot_path, dpi=180)
+	fig.savefig(embedding_plot_path, dpi=TRAINING_CONFIG.embedding_plot_dpi)
 	plt.close(fig)
 
 
@@ -364,11 +417,13 @@ def _train_supervised(
 	x_test: np.ndarray,
 	y_test: np.ndarray,
 	random_state: int,
+	n_estimators: int = TRAINING_CONFIG.random_forest_n_estimators,
+	n_jobs: int = TRAINING_CONFIG.random_forest_n_jobs,
 ) -> tuple[RandomForestClassifier, dict[str, Any]]:
 	model = RandomForestClassifier(
-		n_estimators=350,
+		n_estimators=n_estimators,
 		random_state=random_state,
-		n_jobs=-1,
+		n_jobs=n_jobs,
 	)
 	model.fit(x_train, y_train)
 	metrics = _compute_classification_metrics(model, x_test, y_test)
@@ -452,12 +507,17 @@ def _compute_classification_metrics(
 	return metrics
 
 
-def _train_unsupervised(x_train: np.ndarray, random_state: int) -> tuple[KMeans, dict[str, Any]]:
+def _train_unsupervised(
+	x_train: np.ndarray,
+	random_state: int,
+	max_clusters: int = TRAINING_CONFIG.kmeans_max_clusters,
+	n_init: str = TRAINING_CONFIG.kmeans_n_init,
+) -> tuple[KMeans, dict[str, Any]]:
 	if x_train.shape[0] == 0:
 		raise ValueError("Need at least 1 training sample for unsupervised clustering.")
 
-	n_clusters = max(1, min(8, x_train.shape[0]))
-	kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init="auto")
+	n_clusters = max(1, min(max_clusters, x_train.shape[0]))
+	kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=n_init)
 	kmeans.fit(x_train)
 	cluster_ids = kmeans.labels_
 	silhouette = None
@@ -547,9 +607,37 @@ def main() -> None:
 	args = parse_args()
 	labels_path = Path(args.labels)
 	models_dir = Path(args.models_dir)
-	report_path = Path(args.report_path)
-	embedding_path = Path(args.embedding_path)
-	embedding_plot_path = Path(args.embedding_plot_path)
+	report_path = _resolve_model_output_path(args.report_path, models_dir, PATHS.training_report_path)
+	embedding_path = _resolve_model_output_path(
+		args.embedding_path,
+		models_dir,
+		PATHS.embedding_csv_path,
+	)
+	embedding_plot_path = _resolve_model_output_path(
+		args.embedding_plot_path,
+		models_dir,
+		PATHS.embedding_plot_path,
+	)
+	supervised_path = _resolve_model_output_path(
+		args.supervised_model_path,
+		models_dir,
+		PATHS.supervised_model_path,
+	)
+	semisupervised_path = _resolve_model_output_path(
+		args.semisupervised_model_path,
+		models_dir,
+		PATHS.semisupervised_model_path,
+	)
+	unsupervised_path = _resolve_model_output_path(
+		args.unsupervised_model_path,
+		models_dir,
+		PATHS.unsupervised_model_path,
+	)
+	feature_pipeline_path = _resolve_model_output_path(
+		args.feature_pipeline_path,
+		models_dir,
+		PATHS.feature_pipeline_path,
+	)
 
 	if not labels_path.is_file():
 		raise FileNotFoundError(f"labels CSV not found: {labels_path}")
@@ -608,8 +696,15 @@ def main() -> None:
 		x_test_reduced,
 		y_test,
 		args.random_state,
+		TRAINING_CONFIG.random_forest_n_estimators,
+		TRAINING_CONFIG.random_forest_n_jobs,
 	)
-	kmeans_model, unsupervised_metrics = _train_unsupervised(x_train_reduced, args.random_state)
+	kmeans_model, unsupervised_metrics = _train_unsupervised(
+		x_train_reduced,
+		args.random_state,
+		TRAINING_CONFIG.kmeans_max_clusters,
+		TRAINING_CONFIG.kmeans_n_init,
+	)
 	semi_model, semisupervised_metrics = _train_semisupervised(
 		supervised_model,
 		x_train_reduced,
@@ -622,11 +717,13 @@ def main() -> None:
 	)
 
 	models_dir.mkdir(parents=True, exist_ok=True)
-
-	supervised_path = models_dir / "spectrogram_supervised_model.joblib"
-	semisupervised_path = models_dir / "spectrogram_semisupervised_model.joblib"
-	unsupervised_path = models_dir / "spectrogram_kmeans_model.joblib"
-	feature_pipeline_path = models_dir / "spectrogram_feature_pipeline.joblib"
+	for output_path in (
+		supervised_path,
+		semisupervised_path,
+		unsupervised_path,
+		feature_pipeline_path,
+	):
+		output_path.parent.mkdir(parents=True, exist_ok=True)
 
 	joblib.dump(supervised_model, supervised_path)
 	joblib.dump(semi_model, semisupervised_path)
