@@ -7,7 +7,7 @@ import { useScoreEngine } from '@/hooks/useScoreEngine';
 import { PhoneFrame } from '@/components/shared/PhoneFrame';
 import { LoadingState } from '@/components/CallScreen/LoadingState';
 import { SafeState } from '@/components/CallScreen/SafeState';
-import { PrankState } from '@/components/CallScreen/PrankState';
+import { PrankState } from '@/components/CallScreen/PrankState';    
 import { HighRiskState } from '@/components/CallScreen/HighRiskState';
 import { DevControls } from '@/components/DevControls';
 

@@ -7,6 +7,7 @@ import { ProfilePage } from '@/pages/ProfilePage';
 // ── Lazy import the existing call analyzer page ────────────────────
 // Move the content of your current App.tsx into this component
 import { AnalyzerPage } from '@/pages/AnalyzerPage';
+import { AnalyseRecordingsPage } from './pages/AnalyseRecordingsPage';
 
 export default function App() {
   return (

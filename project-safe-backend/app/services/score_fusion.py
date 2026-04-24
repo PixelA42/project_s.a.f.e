@@ -1,11 +1,7 @@
 """
-Score Fusion — the decision layer.
-Combines spectral_score and intent_score into a final_score and risk_label.
-
-This is where the "dual-layer prevents cry-wolf" logic lives:
-  - HIGH_RISK requires BOTH layers to be elevated
-  - PRANK fires when spectral is high but intent is low (synthetic but harmless)
-  - SAFE is the default when neither layer is alarmed
+Score Fusion — decision layer.
+Combines spectral_score + intent_score → final_score + risk_label.
+No external API calls — pure arithmetic and threshold logic.
 """
 from dataclasses import dataclass
 from flask import current_app
@@ -16,59 +12,49 @@ class FusionResult:
     final_score: float
     spectral_score: float
     intent_score: float
-    risk_label: str  # "HIGH_RISK" | "PRANK" | "SAFE"
+    risk_label: str       # "HIGH_RISK" | "PRANK" | "SAFE"
     reasoning: str
 
 
 def fuse(spectral_score: float, intent_score: float) -> FusionResult:
     """
-    Weighted fusion of both scoring layers.
+    Weighted fusion with dual-gate classification.
 
-    Weights are configurable via .env:
-        SPECTRAL_WEIGHT=0.6
-        INTENT_WEIGHT=0.4
+    HIGH_RISK gate: final_score >= HIGH_RISK_THRESHOLD AND intent_score >= 50
+       → Requires both layers to fire. Prevents synthetic-but-harmless false positives.
 
-    Thresholds are configurable via .env:
-        HIGH_RISK_THRESHOLD=70
-        PRANK_THRESHOLD=35
+    PRANK gate: spectral_score >= PRANK_THRESHOLD AND intent_score < 50
+       → AI voice detected but no coercion in content.
+
+    SAFE: everything else.
     """
-    spectral_w: float = current_app.config.get("SPECTRAL_WEIGHT", 0.6)
-    intent_w: float = current_app.config.get("INTENT_WEIGHT", 0.4)
-    high_risk_threshold: int = current_app.config.get("HIGH_RISK_THRESHOLD", 70)
-    prank_threshold: int = current_app.config.get("PRANK_THRESHOLD", 35)
+    spectral_w: float      = current_app.config.get("SPECTRAL_WEIGHT", 0.6)
+    intent_w: float        = current_app.config.get("INTENT_WEIGHT", 0.4)
+    high_risk_threshold    = current_app.config.get("HIGH_RISK_THRESHOLD", 70)
+    prank_threshold        = current_app.config.get("PRANK_THRESHOLD", 35)
 
-    # Weighted average
     final_score = round(
         (spectral_score * spectral_w) + (intent_score * intent_w), 1
     )
 
-    # ── Classification logic ───────────────────────────────────
-    # HIGH_RISK: overall score is elevated AND intent confirms coercion.
-    # This dual-gate prevents single-layer false positives.
     if final_score >= high_risk_threshold and intent_score >= 50:
         label = "HIGH_RISK"
         reasoning = (
-            f"Dual threat: spectral={spectral_score} (synthetic voice), "
-            f"intent={intent_score} (coercion signals). "
-            f"Both layers exceeded thresholds simultaneously."
+            f"Dual threat confirmed: synthetic voice (spectral={spectral_score}) "
+            f"and coercion language (intent={intent_score}) both exceed thresholds."
         )
-
-    # PRANK: synthetic voice detected but NO coercion in the content.
     elif spectral_score >= prank_threshold and intent_score < 50:
         label = "PRANK"
         reasoning = (
-            f"Synthetic voice detected (spectral={spectral_score}) "
+            f"AI-generated voice detected (spectral={spectral_score}) "
             f"but content is harmless (intent={intent_score}). "
-            f"AI-generated voice, non-threatening."
+            f"Likely synthetic but non-threatening."
         )
-
-    # SAFE: no significant threat signal from either layer.
     else:
         label = "SAFE"
         reasoning = (
-            f"No significant threat. "
-            f"spectral={spectral_score}, intent={intent_score}. "
-            f"Voice and content both within safe parameters."
+            f"No significant threat: spectral={spectral_score}, "
+            f"intent={intent_score}. Voice and content within safe parameters."
         )
 
     return FusionResult(

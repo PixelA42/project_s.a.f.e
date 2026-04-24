@@ -14,25 +14,25 @@ const FEATURES: Array<{
 }> = [
   {
     variant: 'spectral',
-    icon: '🔬',
+    icon: '',
     title: 'Spectral Analysis',
     desc: 'MFCCs and prosody irregularities catch cloned voices before a word is spoken.',
   },
   {
     variant: 'intent',
-    icon: '🧠',
+    icon: '',
     title: 'Intent Detection',
     desc: 'NLP layer flags financial coercion, urgency signals, and authority impersonation.',
   },
   {
     variant: 'wolf',
-    icon: '✓',
+    icon: '',
     title: 'No Cry-Wolf',
     desc: 'Dual-gate logic separates harmless AI pranks from real scam threats.',
   },
   {
     variant: 'realtime',
-    icon: '⚡',
+    icon: '',
     title: 'Real-Time Results',
     desc: 'Sub-second scoring with transparent final, spectral, and intent scores.',
   },
