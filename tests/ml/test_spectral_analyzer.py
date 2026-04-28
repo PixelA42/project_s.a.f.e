@@ -3,6 +3,8 @@ import pytest
 import soundfile as sf
 from hypothesis import given, settings, strategies as st
 from hypothesis import HealthCheck
+import joblib
+import json
 
 from coreML.errors import AudioProcessingError
 from coreML.spectral_analyzer import SpectralAnalyzer
@@ -115,3 +117,66 @@ def test_spectral_score_range_invariant(tmp_path, trained_spectral_analyzer, fre
 
     result = trained_spectral_analyzer.analyze(str(audio_path))
     assert 0.0 <= result.spectral_score <= 100.0
+
+
+def test_spectral_training_rejects_low_f1(tmp_path, monkeypatch):
+    analyzer = SpectralAnalyzer(
+        model_path=str(tmp_path / "spectral_model.joblib"),
+        training_report_path=str(tmp_path / "training_report.json"),
+        n_clusters=2,
+    )
+
+    sample_rate = 16000
+    samples = []
+    for idx in range(6):
+        t = np.linspace(0, 0.4, int(sample_rate * 0.4), endpoint=False)
+        signal = 0.2 * np.sin(2 * np.pi * (220 + idx * 20) * t)
+        path = tmp_path / f"sample_{idx}.wav"
+        _write_wav(str(path), signal, sample_rate)
+        samples.append({"audio_file_path": str(path), "label": "real" if idx < 3 else "synthetic"})
+
+    monkeypatch.setattr("coreML.spectral_analyzer.f1_score", lambda *args, **kwargs: 0.5)
+
+    with pytest.raises(AudioProcessingError) as exc_info:
+        analyzer.train(samples, test_size=0.5)
+
+    assert exc_info.value.error_code == "SPECTRAL_MIN_F1_NOT_MET"
+
+
+def test_spectral_training_serializes_model_and_report(tmp_path):
+    analyzer = SpectralAnalyzer(
+        model_path=str(tmp_path / "spectral_model.joblib"),
+        training_report_path=str(tmp_path / "training_report.json"),
+        n_clusters=2,
+    )
+
+    sample_rate = 16000
+    samples = []
+
+    for idx, freq in enumerate([220, 250, 280, 310, 340, 370]):
+        t = np.linspace(0, 0.6, int(sample_rate * 0.6), endpoint=False)
+        signal = 0.2 * np.sin(2 * np.pi * freq * t)
+        path = tmp_path / f"real_{idx}.wav"
+        _write_wav(str(path), signal, sample_rate)
+        samples.append({"audio_file_path": str(path), "label": "real"})
+
+    for idx, freq in enumerate([440, 480, 520, 560, 600, 640]):
+        t = np.linspace(0, 0.6, int(sample_rate * 0.6), endpoint=False)
+        signal = 0.2 * np.sign(np.sin(2 * np.pi * freq * t))
+        path = tmp_path / f"synthetic_{idx}.wav"
+        _write_wav(str(path), signal, sample_rate)
+        samples.append({"audio_file_path": str(path), "label": "synthetic"})
+
+    f1 = analyzer.train(samples, test_size=0.5)
+
+    assert f1 >= 0.75
+    assert (tmp_path / "spectral_model.joblib").exists()
+    assert (tmp_path / "training_report.json").exists()
+
+    artifact = joblib.load(str(tmp_path / "spectral_model.joblib"))
+    assert "classifier" in artifact
+    assert "kmeans" in artifact
+
+    report = json.loads((tmp_path / "training_report.json").read_text(encoding="utf-8"))
+    assert report["kmeans"]["n_clusters"] >= 1
+    assert "assignment_method" in report["kmeans"]

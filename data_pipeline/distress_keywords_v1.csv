@@ -1,0 +1,10 @@
+keyword,category,weight
+Bail,financial,1.0
+Transfer,financial,1.0
+OTP,financial,0.9
+UPI,financial,1.0
+Money,financial,0.9
+Accident,distress,0.8
+Hospital,distress,0.8
+Help,distress,0.6
+Police,authority,0.7

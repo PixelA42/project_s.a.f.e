@@ -3,8 +3,11 @@ import pytest
 import soundfile as sf
 from hypothesis import given, settings, strategies as st
 from hypothesis import HealthCheck
+import joblib
+import json
 
 from coreML.intent_analyzer import IntentAnalyzer
+from coreML.errors import AudioProcessingError
 
 
 class _DummyWhisperModel:
@@ -70,3 +73,61 @@ def test_no_speech_returns_zero(analyzer_factory, tmp_path):
 
     assert result.intent_score == 0.0
     assert result.no_speech_detected is True
+
+
+def test_intent_training_rejects_low_f1(analyzer_factory, monkeypatch, tmp_path):
+    monkeypatch.setattr(IntentAnalyzer, "_safe_load_spacy_model", lambda self: None)
+    monkeypatch.setattr(IntentAnalyzer, "_ensure_nltk_tokenizer", lambda self: None)
+    monkeypatch.setattr(
+        IntentAnalyzer,
+        "_load_whisper_model",
+        staticmethod(lambda: _DummyWhisperModel("transfer money now")),
+    )
+
+    analyzer = IntentAnalyzer(model_path=str(tmp_path / "intent_model.joblib"))
+    samples = [
+        {"transcript": "transfer money now", "label": "coercive"},
+        {"transcript": "hello how are you", "label": "benign"},
+        {"transcript": "please send otp", "label": "coercive"},
+        {"transcript": "have a nice day", "label": "benign"},
+        {"transcript": "wire transfer right now", "label": "coercive"},
+        {"transcript": "good evening friend", "label": "benign"},
+    ]
+
+    monkeypatch.setattr("coreML.intent_analyzer.f1_score", lambda *args, **kwargs: 0.5)
+
+    with pytest.raises(AudioProcessingError) as exc_info:
+        analyzer.train(samples, test_size=0.5)
+
+    assert exc_info.value.error_code == "INTENT_MIN_F1_NOT_MET"
+
+
+def test_intent_training_serializes_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(IntentAnalyzer, "_safe_load_spacy_model", lambda self: None)
+    monkeypatch.setattr(IntentAnalyzer, "_ensure_nltk_tokenizer", lambda self: None)
+    monkeypatch.setattr(
+        IntentAnalyzer,
+        "_load_whisper_model",
+        staticmethod(lambda: _DummyWhisperModel("transfer money now")),
+    )
+
+    analyzer = IntentAnalyzer(model_path=str(tmp_path / "intent_model.joblib"))
+    samples = [
+        {"transcript": "transfer money now", "label": "coercive"},
+        {"transcript": "hello friend", "label": "benign"},
+        {"transcript": "call me immediately", "label": "coercive"},
+        {"transcript": "good morning", "label": "benign"},
+        {"transcript": "send otp right now", "label": "coercive"},
+        {"transcript": "pleasant afternoon", "label": "benign"},
+    ]
+
+    monkeypatch.setattr("coreML.intent_analyzer.f1_score", lambda *args, **kwargs: 0.8)
+
+    f1 = analyzer.train(samples, test_size=0.5)
+
+    assert f1 >= 0.70
+    assert (tmp_path / "intent_model.joblib").exists()
+
+    artifact = joblib.load(str(tmp_path / "intent_model.joblib"))
+    assert "vectorizer" in artifact
+    assert "classifier" in artifact

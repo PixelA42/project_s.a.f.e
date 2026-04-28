@@ -58,6 +58,7 @@ lightning_logs/
 /dataset_stats.txt
 /tmp_uploaded_spec.png
 /models/
+/outputs/
 
 # Logs and serialized experiment outputs
 *.log
@@ -122,5 +123,6 @@ labels.csv
 projectsafe/node_modules/
 projectsafe/dist/
 projectsafe/.vite/
+GUIDES\guide_to_completion.txt
 
 

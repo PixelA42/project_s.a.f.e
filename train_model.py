@@ -40,6 +40,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from config import SETTINGS
+from experiment_tracking import append_experiment_log_row, to_compact_json, utc_timestamp
 
 
 GENERAL_CONFIG = SETTINGS.general
@@ -603,6 +604,35 @@ def _train_semisupervised(
 	return semi_model, metrics
 
 
+def _append_unsupervised_experiment_log(
+	labels_path: Path,
+	args: argparse.Namespace,
+	unsupervised_metrics: dict[str, Any],
+) -> None:
+	try:
+		append_experiment_log_row(
+			PATHS.experiment_log_path,
+			{
+				"timestamp": utc_timestamp(),
+				"dataset_name": labels_path.name,
+				"model_name": "kmeans",
+				"key_metrics": to_compact_json(unsupervised_metrics),
+				"hyperparameters": to_compact_json(
+					{
+						"random_state": int(args.random_state),
+						"kmeans_max_clusters": int(TRAINING_CONFIG.kmeans_max_clusters),
+						"kmeans_n_init": str(TRAINING_CONFIG.kmeans_n_init),
+						"image_size": int(args.image_size),
+						"pca_components": int(args.pca_components),
+						"embedding_method": str(args.embedding_method),
+					},
+				),
+			},
+		)
+	except Exception as exc:
+		print(f"[warn] Failed to append experiment log: {exc}")
+
+
 def main() -> None:
 	args = parse_args()
 	labels_path = Path(args.labels)
@@ -776,6 +806,12 @@ def main() -> None:
 	}
 	with open(report_path, "w", encoding="utf-8") as f:
 		json.dump(report, f, indent=2)
+
+	_append_unsupervised_experiment_log(
+		labels_path=labels_path,
+		args=args,
+		unsupervised_metrics=unsupervised_metrics,
+	)
 
 	print("\nTraining complete.")
 	print("\nModel metrics summary:")

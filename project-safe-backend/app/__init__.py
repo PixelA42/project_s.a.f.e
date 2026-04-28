@@ -1,13 +1,16 @@
 """
 Flask application factory.
 """
-from flask import Flask, jsonify
+import uuid
+
+from flask import Flask, jsonify, g, request
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flasgger import Swagger
 
 from config import get_config
+from app.database import configure_database
 from app.models.loaders import load_all_models
 from app.utils.logger import setup_logger
 
@@ -84,18 +87,27 @@ def create_app() -> Flask:
 
     limiter.init_app(app)
     load_all_models(app)
+    configure_database(app.config.get("DATABASE_URL"))
 
     # ── Swagger UI ─────────────────────────────────────────────
     Swagger(app, config=SWAGGER_CONFIG, template=SWAGGER_TEMPLATE)
 
+    @app.before_request
+    def assign_request_id():
+        g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+
     # ── Blueprints ─────────────────────────────────────────────
-    from app.routes.analyze import analyze_bp
+    from app.routes.analyze import analyze_bp, analyze_audio, analyze_intent, evaluate_risk
     from app.routes.health import health_bp
     from app.routes.auth import auth_bp
 
     app.register_blueprint(analyze_bp, url_prefix="/api/v1")
     app.register_blueprint(health_bp,  url_prefix="/api/v1")
     app.register_blueprint(auth_bp,    url_prefix="/api/v1/auth")
+
+    app.add_url_rule("/api/analyze-audio", endpoint="api_analyze_audio", view_func=analyze_audio, methods=["POST"])
+    app.add_url_rule("/api/analyze-intent", endpoint="api_analyze_intent", view_func=analyze_intent, methods=["POST"])
+    app.add_url_rule("/api/evaluate-risk", endpoint="api_evaluate_risk", view_func=evaluate_risk, methods=["POST"])
 
     # ── Global error handlers ──────────────────────────────────
     @app.errorhandler(404)
@@ -112,6 +124,7 @@ def create_app() -> Flask:
 
     @app.errorhandler(500)
     def server_error(e):
-        return jsonify({"error": "internal server error", "detail": str(e)}), 500
+        app.logger.exception("Unhandled server error")
+        return jsonify({"error": "internal server error"}), 500
 
     return app

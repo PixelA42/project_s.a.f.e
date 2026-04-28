@@ -148,3 +148,39 @@ def test_train_semisupervised_rejects_invalid_unlabeled_ratio():
             threshold=SETTINGS.training.pseudo_threshold,
             random_state=SETTINGS.general.random_seed,
         )
+
+
+def test_append_unsupervised_experiment_log_writes_row(tmp_path, monkeypatch):
+    log_path = tmp_path / "outputs" / "experiment_log.csv"
+    patched_paths = type("Paths", (), {"experiment_log_path": log_path})()
+    monkeypatch.setattr(train_model, "PATHS", patched_paths)
+
+    args = type(
+        "Args",
+        (),
+        {
+            "random_state": SETTINGS.general.random_seed,
+            "image_size": SETTINGS.audio.feature_image_size,
+            "pca_components": SETTINGS.training.pca_components,
+            "embedding_method": SETTINGS.training.embedding_method,
+        },
+    )()
+    unsupervised_metrics = {
+        "n_clusters": 3,
+        "inertia": 12.5,
+        "silhouette_score": 0.41,
+    }
+
+    train_model._append_unsupervised_experiment_log(
+        labels_path=tmp_path / "labels.csv",
+        args=args,
+        unsupervised_metrics=unsupervised_metrics,
+    )
+
+    assert log_path.is_file()
+    frame = pd.read_csv(log_path)
+    assert len(frame) == 1
+    assert frame.iloc[0]["dataset_name"] == "labels.csv"
+    assert frame.iloc[0]["model_name"] == "kmeans"
+    assert "n_clusters" in frame.iloc[0]["key_metrics"]
+    assert "random_state" in frame.iloc[0]["hyperparameters"]

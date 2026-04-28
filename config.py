@@ -23,6 +23,10 @@ class PathConfig:
     project_root: Path = PROJECT_ROOT
     audio_dataset_dir: Path = _resolve("Audios")
     spectrogram_dir: Path = _resolve("spectrograms")
+    outputs_dir: Path = _resolve("outputs")
+    experiment_log_path: Path = _resolve("outputs", "experiment_log.csv")
+    supervised_outputs_dir: Path = _resolve("outputs", "supervised")
+    unsupervised_outputs_dir: Path = _resolve("outputs", "unsupervised")
     labels_csv_path: Path = _resolve("labels.csv")
     dataset_stats_path: Path = _resolve("dataset_stats.txt")
     models_dir: Path = _resolve("models")
@@ -39,6 +43,7 @@ class PathConfig:
     spectral_model_path: Path = _resolve("models", "spectral_model.joblib")
     spectral_training_report_path: Path = _resolve("models", "spectral_training_report.json")
     intent_model_path: Path = _resolve("models", "intent_model.joblib")
+    intent_training_report_path: Path = _resolve("models", "intent_training_report.json")
     intent_keywords_csv_path: Path = _resolve("data_pipeline", "distress_keywords_v1.csv")
 
 

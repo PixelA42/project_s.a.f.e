@@ -1,0 +1,13 @@
+{
+  "run_id": "c64ac1a9-3143-40d9-bc2b-02656be59d53",
+  "timestamp": "2026-04-28T15:16:49.509449+00:00",
+  "labeled_count": 4175,
+  "unlabeled_count": 0,
+  "pseudo_labeled_count": 0,
+  "pseudo_label_threshold": 0.85,
+  "splits": {
+    "train": 3340,
+    "validation": 418,
+    "test": 417
+  }
+}

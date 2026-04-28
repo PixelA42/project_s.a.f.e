@@ -1,0 +1,151 @@
+I’ve got enough evidence to format the full requirement-by-requirement checklist now. I’m organizing it as a strict status table with direct file evidence so you can see exactly what is done, partial, or still left.Below is the strict requirement-by-requirement checklist for the project, using the integrated stack as the primary reference.
+
+Legend:
+- Done = implemented and evidenced in the repo
+- Partial = present, but incomplete, mocked, mismatched, or not aligned to the spec
+- Left = missing or not started in the repo evidence I found
+
+## Requirement 1: Spectral Analysis
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Extract MFCC features as a 2D array with 40 coefficients | Done | spectral_analyzer.py |
+| Produce spectral_score in range 0 to 100 | Done | spectral_analyzer.py, test_spectral_analyzer.py |
+| Return structured error for corrupt, empty, or unsupported audio | Done | errors.py, spectral_analyzer.py |
+| Train with ASVspoof data and reach F1 at least 0.75 | Partial | spectral_analyzer.py, test_spectral_analyzer.py |
+| Complete scoring within 5 seconds for up to 60 second audio | Partial | spectral_analyzer.py |
+
+## Requirement 2: Intent Analysis
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Transcribe spoken content using Whisper base model | Done | intent_analyzer.py |
+| Analyze transcript against Distress_Keyword_Set and produce intent_score in 0 to 100 | Done | intent_analyzer.py, test_intent_analyzer.py |
+| Higher keyword density and urgency patterns should raise score | Done | intent_analyzer.py |
+| Return intent_score 0 and no_speech_detected when no speech is present | Done | intent_analyzer.py, test_intent_analyzer.py |
+| Return structured error for corrupt, empty, or unsupported audio | Done | errors.py, intent_analyzer.py |
+| Complete transcription and scoring within 10 seconds for up to 60 second audio | Partial | intent_analyzer.py |
+
+## Requirement 3: Score Fusion and Risk Classification
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Compute final_score = 0.70 × spectral_score + 0.30 × intent_score | Done | score_fuser.py, test_score_and_risk.py |
+| Keep final_score in range 0 to 100 | Done | score_fuser.py, test_score_and_risk.py |
+| Return HIGH_RISK when final_score > 75 and intent_score > 60 | Done | risk_classifier.py, test_score_and_risk.py |
+| Return PRANK when final_score > 75 and intent_score < 40 | Done | risk_classifier.py, test_score_and_risk.py |
+| Return SAFE otherwise | Done | risk_classifier.py, test_score_and_risk.py |
+| Fusion formula invariant holds for all valid inputs | Done | test_score_and_risk.py |
+
+## Requirement 4: Backend API
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Expose POST /api/analyze-audio endpoint | Left | analyze.py, __init__.py |
+| Expose POST /api/analyze-intent endpoint | Left | analyze.py, __init__.py |
+| Expose POST /api/evaluate-risk endpoint | Partial | api.py, scoreApi.ts |
+| Validate required fields and ranges before processing | Partial | validators.py, api.py |
+| Return HTTP 422 with structured error body for invalid input | Partial | analyze.py, api.py |
+| Return HTTP 200 within 15 seconds for valid audio up to 60 seconds | Left | analyze.py, api.py |
+| Accept WAV and MP3 up to 25 MB | Partial | api.py |
+
+## Requirement 5: Call Log Persistence
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Persist a record with id, timestamp, caller_id, audio_file_path, transcript, spectral_score, intent_score, final_score, risk_label | Left | models.py |
+| Assign unique UUID v4 to each record | Left | models.py |
+| Store UTC timezone-aware timestamps | Left | models.py |
+| Return HTTP 500 and log failure if DB write fails | Left | __init__.py |
+| Enforce CHECK constraints for score ranges | Left | models.py |
+
+## Requirement 6: Frontend Risk Display
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Display HIGH_RISK as SCAM LIKELY state | Done | AnalyzerPage.tsx |
+| Display PRANK as Digital Avatar state | Done | AnalyzerPage.tsx |
+| Display SAFE as standard incoming-call screen | Done | AnalyzerPage.tsx |
+| Show loading state without stale prior results | Done | AnalyzerPage.tsx |
+| Display final_score, spectral_score, and intent_score in all non-loading states | Done | AnalyzerPage.tsx |
+| Support mock score data during development | Done | scoreApi.ts, mockResponses.ts |
+
+## Requirement 7: Data Pipeline
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Partition dataset into 80 percent train, 10 percent validation, 10 percent test with no overlap | Left | tasks.md, requirements.md |
+| Maintain separate unlabeled audio batch | Left | tasks.md |
+| Maintain versioned distress keyword CSV with keyword, category, weight columns | Left | tasks.md, config.py |
+| Apply pseudo-labels when confidence is at least 0.85 | Left | tasks.md |
+| Keep below-threshold samples unlabeled | Left | tasks.md |
+| Produce JSON dataset manifest with run metadata and split counts | Left | tasks.md |
+
+## Requirement 8: Supervised Model Training
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Train Spectral_Analyzer on labeled MFCC features | Partial | spectral_analyzer.py |
+| Reach F1 at least 0.75 on held-out test split | Partial | spectral_analyzer.py, test_spectral_analyzer.py |
+| Train Intent_Analyzer scoring model on labeled transcripts | Done | intent_analyzer.py |
+| Reach F1 at least 0.70 on held-out test split | Partial | intent_analyzer.py |
+| Serialize trained models to .joblib | Done | spectral_analyzer.py, intent_analyzer.py |
+
+## Requirement 9: Unsupervised Anomaly Detection
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Apply K-Means clustering to MFCC vectors | Done | spectral_analyzer.py |
+| Apply K-Means clustering to text-derived vectors | Done | intent_analyzer.py |
+| Include anomaly_flag in API response | Done | types.py |
+| Document cluster count and assignment method in training report JSON | Partial | spectral_analyzer.py, training_report.json |
+
+## Requirement 10: MFCC Feature Round-Trip
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| Serialize MFCC features to NumPy .npy | Done | spectral_analyzer.py |
+| Deserialize to same shape and dtype | Done | spectral_analyzer.py, test_spectral_analyzer.py |
+| Preserve numerical equivalence after extract, serialize, deserialize | Done | test_spectral_analyzer.py, spectral_analyzer.py |
+
+## Short summary
+- Strongest area: Core ML and ML invariants.
+- Biggest gaps: Backend API contract, persistence layer, dataset pipeline, and full integration testing.
+- Main mismatch: The integrated backend and frontend are not yet aligned to the spec’s FastAPI/PostgreSQL/Docker target, and the frontend still has mock fallbacks.
+
+If you want, I can turn this into a single prioritized punch list next, ordered by what must be built first to get the project to demo-ready status.
+
+
+Start with the requirements that unblock everything else.
+
+## Recommended order
+
+1. Requirement 7: Data Pipeline
+- Why first: it defines the dataset structure, keyword CSV, and pseudo-label workflow that the ML side depends on.
+- Files/specs: requirements.md, tasks.md
+
+2. Requirement 5: Call Log Persistence
+- Why second: persistence is a core backend dependency and should be designed before wiring the API flow.
+- Files/specs: requirements.md
+
+3. Requirement 4: Backend API
+- Why third: once data and persistence are clear, wire the request/response contract and validation.
+- Files/specs: requirements.md
+
+4. Requirement 8 and 9: Model Training and Anomaly Detection
+- Why fourth: the ML core is already mostly there, so now focus on thresholds, model serialization, and report completeness.
+- Files/specs: requirements.md, requirements.md
+
+5. Requirement 10: MFCC Round-Trip
+- Why fifth: this is a supporting correctness layer for the spectral pipeline.
+- Files/specs: requirements.md
+
+6. Requirement 6: Frontend Risk Display
+- Why sixth: the UI is mostly built, so after API contracts stabilize, connect it cleanly.
+- Files/specs: requirements.md
+
+7. End-to-end integration and tests
+- Why last: after the pieces exist, verify the full flow and tighten the gaps.
+
+## Best practical starting point
+If you want the fastest path to a working MVP, start with:
+1. Requirement 7
+2. Requirement 5
+3. Requirement 4
+
+That sequence removes the biggest blockers first.
+
+## In one sentence
+Build the data pipeline first, then persistence, then API wiring, then polish the ML guarantees and frontend integration.
+
+If you want, I can turn this into a concrete week-by-week implementation plan or a file-by-file task order next.

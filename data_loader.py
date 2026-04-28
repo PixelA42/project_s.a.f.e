@@ -28,13 +28,32 @@ class DataLoadingError(ValueError):
 
 
 @dataclass(frozen=True)
+class PreparedDataset:
+    feature_frame: pd.DataFrame
+    x_labeled_frame: pd.DataFrame
+    y_full: pd.Series
+    y_labeled: pd.Series
+    labeled_mask: pd.Series
+    target_column: str
+    task_type: str
+    numeric_columns: list[str]
+    categorical_columns: list[str]
+    dropped_columns: dict[str, str]
+    null_strategy_by_column: dict[str, str]
+    source_type: str
+    source_metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class LoadedData:
     X_train: np.ndarray
     X_test: np.ndarray
     y_train: np.ndarray
     y_test: np.ndarray
     X_full: np.ndarray
+    y_full: np.ndarray
     target_column: str
+    task_type: str
     feature_names: list[str]
     numeric_columns: list[str]
     categorical_columns: list[str]
@@ -44,6 +63,9 @@ class LoadedData:
     source_type: str
     metadata: dict[str, Any]
     preprocessor: ColumnTransformer
+    X_frame: pd.DataFrame
+    X_labeled_frame: pd.DataFrame
+    y_labeled: pd.Series
 
 
 def load_data(
@@ -62,7 +84,122 @@ def load_data(
 
     raw_df, source_type, source_metadata = _read_dataset(resolved_path)
     _validate_raw_dataframe(raw_df, resolved_path)
+    prepared = _prepare_supervised_dataset(raw_df, source_type, source_metadata)
 
+    stratify = prepared.y_labeled if prepared.task_type == "classification" and _can_stratify(prepared.y_labeled) else None
+    split_strategy = "random"
+    try:
+        x_train_df, x_test_df, y_train, y_test = train_test_split(
+            prepared.x_labeled_frame,
+            prepared.y_labeled,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=stratify,
+        )
+    except ValueError as exc:
+        if stratify is None:
+            raise DataLoadingError(
+                f"Unable to create a supervised train/test split from '{prepared.target_column}': {exc}"
+            ) from exc
+        x_train_df, x_test_df, y_train, y_test = train_test_split(
+            prepared.x_labeled_frame,
+            prepared.y_labeled,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=None,
+        )
+        split_strategy = "random_fallback"
+    else:
+        if stratify is not None:
+            split_strategy = "stratified"
+
+    preprocessor = _build_preprocessor(prepared.numeric_columns, prepared.categorical_columns)
+    x_train = preprocessor.fit_transform(x_train_df)
+    x_test = preprocessor.transform(x_test_df)
+    x_full = preprocessor.transform(prepared.feature_frame)
+    feature_names = list(preprocessor.get_feature_names_out())
+
+    metadata = {
+        **prepared.source_metadata,
+        "row_count": int(len(raw_df)),
+        "labeled_row_count": int(prepared.labeled_mask.sum()),
+        "unlabeled_row_count": int((~prepared.labeled_mask).sum()),
+        "target_column": prepared.target_column,
+        "task_type": prepared.task_type,
+        "target_summary": _summarize_target(prepared.y_labeled, prepared.task_type),
+        "feature_count_before_encoding": int(prepared.feature_frame.shape[1]),
+        "feature_count_after_encoding": int(len(feature_names)),
+        "split_strategy": split_strategy,
+        "dropped_columns": dict(prepared.dropped_columns),
+        "null_strategy_by_column": dict(prepared.null_strategy_by_column),
+    }
+
+    return LoadedData(
+        X_train=np.asarray(x_train, dtype=np.float32),
+        X_test=np.asarray(x_test, dtype=np.float32),
+        y_train=y_train.to_numpy(),
+        y_test=y_test.to_numpy(),
+        X_full=np.asarray(x_full, dtype=np.float32),
+        y_full=prepared.y_full.to_numpy(),
+        target_column=prepared.target_column,
+        task_type=prepared.task_type,
+        feature_names=feature_names,
+        numeric_columns=prepared.numeric_columns,
+        categorical_columns=prepared.categorical_columns,
+        dropped_columns=prepared.dropped_columns,
+        null_strategy_by_column=prepared.null_strategy_by_column,
+        dataset_path=resolved_path,
+        source_type=prepared.source_type,
+        metadata=metadata,
+        preprocessor=preprocessor,
+        X_frame=prepared.feature_frame.copy(),
+        X_labeled_frame=prepared.x_labeled_frame.copy(),
+        y_labeled=prepared.y_labeled.copy(),
+    )
+
+
+def _read_dataset(dataset_path: Path) -> tuple[pd.DataFrame, str, dict[str, Any]]:
+    if dataset_path.is_file():
+        return _read_tabular_file(dataset_path), "tabular_file", {"dataset_file": str(dataset_path)}
+
+    tabular_files = sorted(
+        path
+        for path in dataset_path.iterdir()
+        if path.is_file() and path.suffix.lower() in DATA_CONFIG.supported_tabular_extensions
+    )
+    if len(tabular_files) == 1:
+        return (
+            _read_tabular_file(tabular_files[0]),
+            "tabular_file",
+            {"dataset_file": str(tabular_files[0]), "dataset_directory": str(dataset_path)},
+        )
+    if len(tabular_files) > 1:
+        raise DataLoadingError(
+            f"Multiple tabular files were found in {dataset_path}. "
+            "Pass an explicit file path to load_data(dataset_path=...)."
+        )
+
+    audio_files = sorted(
+        path
+        for path in dataset_path.rglob("*")
+        if path.is_file() and path.suffix.lower() in AUDIO_CONFIG.supported_extensions
+    )
+    if not audio_files:
+        raise DataLoadingError(
+            f"No supported dataset files were found under {dataset_path}. "
+            f"Expected tabular files {DATA_CONFIG.supported_tabular_extensions} or audio files "
+            f"{AUDIO_CONFIG.supported_extensions}."
+        )
+
+    dataframe, metadata = _build_audio_metadata_dataframe(dataset_path, audio_files)
+    return dataframe, "audio_directory", metadata
+
+
+def _prepare_supervised_dataset(
+    raw_df: pd.DataFrame,
+    source_type: str,
+    source_metadata: dict[str, Any],
+) -> PreparedDataset:
     target_column = _detect_target_column(raw_df)
     if target_column is None:
         raise DataLoadingError(
@@ -109,7 +246,6 @@ def load_data(
 
     labeled_mask = y_all.notna()
     labeled_count = int(labeled_mask.sum())
-    unlabeled_count = int((~labeled_mask).sum())
     if labeled_count < 2:
         raise DataLoadingError(
             "No valid target was found for supervised learning. Need at least 2 labeled rows."
@@ -117,114 +253,34 @@ def load_data(
 
     x_labeled = feature_frame.loc[labeled_mask].reset_index(drop=True)
     y_labeled = y_all.loc[labeled_mask].reset_index(drop=True)
-    if y_labeled.nunique(dropna=True) < 2:
-        raise DataLoadingError(
-            f"Target column '{target_column}' must contain at least 2 classes for supervised learning."
-        )
+    task_type = _detect_task_type(y_labeled)
 
-    stratify = y_labeled if _can_stratify(y_labeled) else None
-    split_strategy = "random"
-    try:
-        x_train_df, x_test_df, y_train, y_test = train_test_split(
-            x_labeled,
-            y_labeled,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=stratify,
-        )
-    except ValueError as exc:
-        if stratify is None:
+    if task_type == "classification":
+        if y_labeled.nunique(dropna=True) < 2:
             raise DataLoadingError(
-                f"Unable to create a supervised train/test split from '{target_column}': {exc}"
-            ) from exc
-        x_train_df, x_test_df, y_train, y_test = train_test_split(
-            x_labeled,
-            y_labeled,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=None,
-        )
-        split_strategy = "random_fallback"
+                f"Target column '{target_column}' must contain at least 2 classes for supervised learning."
+            )
     else:
-        if stratify is not None:
-            split_strategy = "stratified"
+        if len(y_labeled) < 3:
+            raise DataLoadingError(
+                f"Target column '{target_column}' must contain at least 3 labeled rows for regression."
+            )
 
-    preprocessor = _build_preprocessor(numeric_columns, categorical_columns)
-    x_train = preprocessor.fit_transform(x_train_df)
-    x_test = preprocessor.transform(x_test_df)
-    x_full = preprocessor.transform(feature_frame)
-    feature_names = list(preprocessor.get_feature_names_out())
-
-    metadata = {
-        **source_metadata,
-        "row_count": int(len(raw_df)),
-        "labeled_row_count": labeled_count,
-        "unlabeled_row_count": unlabeled_count,
-        "target_column": target_column,
-        "target_distribution": {
-            str(label): int(count) for label, count in y_labeled.value_counts().items()
-        },
-        "feature_count_before_encoding": int(feature_frame.shape[1]),
-        "feature_count_after_encoding": int(len(feature_names)),
-        "split_strategy": split_strategy,
-        "dropped_columns": dict(dropped_columns),
-        "null_strategy_by_column": dict(null_strategy_by_column),
-    }
-
-    return LoadedData(
-        X_train=np.asarray(x_train, dtype=np.float32),
-        X_test=np.asarray(x_test, dtype=np.float32),
-        y_train=y_train.to_numpy(),
-        y_test=y_test.to_numpy(),
-        X_full=np.asarray(x_full, dtype=np.float32),
+    return PreparedDataset(
+        feature_frame=feature_frame.reset_index(drop=True),
+        x_labeled_frame=x_labeled,
+        y_full=y_all.reset_index(drop=True),
+        y_labeled=y_labeled,
+        labeled_mask=labeled_mask.reset_index(drop=True),
         target_column=target_column,
-        feature_names=feature_names,
+        task_type=task_type,
         numeric_columns=numeric_columns,
         categorical_columns=categorical_columns,
         dropped_columns=dropped_columns,
         null_strategy_by_column=null_strategy_by_column,
-        dataset_path=resolved_path,
         source_type=source_type,
-        metadata=metadata,
-        preprocessor=preprocessor,
+        source_metadata=source_metadata,
     )
-
-
-def _read_dataset(dataset_path: Path) -> tuple[pd.DataFrame, str, dict[str, Any]]:
-    if dataset_path.is_file():
-        return _read_tabular_file(dataset_path), "tabular_file", {"dataset_file": str(dataset_path)}
-
-    tabular_files = sorted(
-        path
-        for path in dataset_path.iterdir()
-        if path.is_file() and path.suffix.lower() in DATA_CONFIG.supported_tabular_extensions
-    )
-    if len(tabular_files) == 1:
-        return (
-            _read_tabular_file(tabular_files[0]),
-            "tabular_file",
-            {"dataset_file": str(tabular_files[0]), "dataset_directory": str(dataset_path)},
-        )
-    if len(tabular_files) > 1:
-        raise DataLoadingError(
-            f"Multiple tabular files were found in {dataset_path}. "
-            "Pass an explicit file path to load_data(dataset_path=...)."
-        )
-
-    audio_files = sorted(
-        path
-        for path in dataset_path.rglob("*")
-        if path.is_file() and path.suffix.lower() in AUDIO_CONFIG.supported_extensions
-    )
-    if not audio_files:
-        raise DataLoadingError(
-            f"No supported dataset files were found under {dataset_path}. "
-            f"Expected tabular files {DATA_CONFIG.supported_tabular_extensions} or audio files "
-            f"{AUDIO_CONFIG.supported_extensions}."
-        )
-
-    dataframe, metadata = _build_audio_metadata_dataframe(dataset_path, audio_files)
-    return dataframe, "audio_directory", metadata
 
 
 def _read_tabular_file(dataset_file: Path) -> pd.DataFrame:
@@ -347,7 +403,7 @@ def _detect_target_column(dataframe: pd.DataFrame) -> str | None:
 
     for candidate_name in DATA_CONFIG.target_candidate_names:
         column = normalized_map.get(_normalize_token(candidate_name))
-        if column and _is_valid_target_series(dataframe[column], allow_numeric=True):
+        if column and _is_named_target_candidate_valid(dataframe[column]):
             return column
 
     fallback_candidates: list[tuple[int, str]] = []
@@ -361,6 +417,11 @@ def _detect_target_column(dataframe: pd.DataFrame) -> str | None:
 
     fallback_candidates.sort(key=lambda item: (item[0], item[1]))
     return fallback_candidates[0][1]
+
+
+def _is_named_target_candidate_valid(series: pd.Series) -> bool:
+    non_null = series.dropna()
+    return not non_null.empty and int(non_null.nunique()) >= 2
 
 
 def _is_valid_target_series(series: pd.Series, *, allow_numeric: bool) -> bool:
@@ -380,6 +441,45 @@ def _is_valid_target_series(series: pd.Series, *, allow_numeric: bool) -> bool:
         return unique_count <= max(20, int(len(non_null) * 0.1))
 
     return unique_count <= max(50, int(len(non_null) * 0.5))
+
+
+def _detect_task_type(target: pd.Series) -> str:
+    non_null = target.dropna()
+    if non_null.empty:
+        raise DataLoadingError("Target column is empty after dropping null values.")
+
+    if pd.api.types.is_bool_dtype(non_null):
+        return "classification"
+    if (
+        pd.api.types.is_object_dtype(non_null)
+        or pd.api.types.is_string_dtype(non_null)
+        or isinstance(non_null.dtype, pd.CategoricalDtype)
+    ):
+        return "classification"
+
+    unique_count = int(non_null.nunique())
+    unique_ratio = float(unique_count / max(1, len(non_null)))
+    if unique_count <= 10:
+        return "classification"
+    if pd.api.types.is_integer_dtype(non_null) and unique_ratio <= 0.10:
+        return "classification"
+    return "regression"
+
+
+def _summarize_target(target: pd.Series, task_type: str) -> dict[str, Any]:
+    if task_type == "classification":
+        return {
+            "type": "classification",
+            "distribution": {str(label): int(count) for label, count in target.value_counts().items()},
+        }
+
+    return {
+        "type": "regression",
+        "mean": float(target.mean()),
+        "std": float(target.std(ddof=0)),
+        "min": float(target.min()),
+        "max": float(target.max()),
+    }
 
 
 def _identify_columns_to_drop(
@@ -559,4 +659,4 @@ def _can_stratify(labels: pd.Series) -> bool:
     return counts.size > 1 and int(counts.min()) >= 2
 
 
-__all__ = ["DataLoadingError", "LoadedData", "load_data"]
+__all__ = ["DataLoadingError", "LoadedData", "PreparedDataset", "load_data"]

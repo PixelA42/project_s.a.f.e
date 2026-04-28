@@ -13,6 +13,9 @@ class Config:
     DEBUG: bool = os.getenv("FLASK_DEBUG", "0") == "1"
     TESTING: bool = False
 
+    # ── Database ───────────────────────────────────────────────
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///project_safe_backend.db")
+
     # ── CORS ───────────────────────────────────────────────────
     CORS_ORIGINS: str = "*"
 
@@ -76,6 +79,7 @@ class TestingConfig(Config):
     USE_REAL_SPECTRAL_MODEL = False
     USE_REAL_INTENT_MODEL = False
     USE_REAL_TRANSCRIPTION = False
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")
 
 
 config_map = {

@@ -37,6 +37,7 @@ class IntentAnalyzer:
         timeout_seconds: int = INTENT_TIMEOUT_SECONDS,
         keywords_csv_path: str = str(PATHS.intent_keywords_csv_path),
         model_path: str = str(PATHS.intent_model_path),
+        training_report_path: str = str(PATHS.intent_training_report_path),
         random_state: int = GENERAL_CONFIG.random_seed,
         n_clusters: int = CORE_CONFIG.intent_cluster_count,
     ) -> None:
@@ -45,6 +46,7 @@ class IntentAnalyzer:
         self.model_path = model_path
         self.random_state = random_state
         self.n_clusters = n_clusters
+        self.training_report_path = training_report_path
 
         self._whisper_model = self._load_whisper_model()
         self._nltk = None
@@ -322,6 +324,25 @@ class IntentAnalyzer:
             "coercion_label": self._coercion_label,
         }
         joblib.dump(artifact, self.model_path)
+        # Write intent training report with KMeans metadata
+        try:
+            report_payload = {
+                "kmeans": {
+                    "n_clusters": int(getattr(self.kmeans_model, "n_clusters", self.n_clusters)),
+                    "assignment_method": "KMeans (Euclidean distance)",
+                },
+                "intent_training": {
+                    "model_type": "random_forest",
+                    "f1_score": model_f1,
+                    "sample_count": len(samples),
+                },
+            }
+            os.makedirs(os.path.dirname(self.training_report_path) or ".", exist_ok=True)
+            with open(self.training_report_path, "w", encoding="utf-8") as report_file:
+                json.dump(report_payload, report_file, indent=2)
+        except Exception:
+            # Do not fail training if report writing fails; log silently.
+            pass
         return model_f1
 
     def _compute_anomaly_flag(self, transcript: str) -> bool:
