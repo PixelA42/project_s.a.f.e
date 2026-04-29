@@ -31,3 +31,13 @@ def test_risk_classification_completeness(final_score, intent_score):
     classifier = RiskClassifier()
     label = classifier.classify(final_score, intent_score)
     assert label in {RiskLabel.HIGH_RISK, RiskLabel.PRANK, RiskLabel.SAFE}
+
+
+def test_risk_classifier_threshold_boundaries():
+    classifier = RiskClassifier()
+
+    assert classifier.classify(75.0, 80.0) == RiskLabel.SAFE
+    assert classifier.classify(76.0, 60.0) == RiskLabel.SAFE
+    assert classifier.classify(76.0, 40.0) == RiskLabel.SAFE
+    assert classifier.classify(76.0, 61.0) == RiskLabel.HIGH_RISK
+    assert classifier.classify(76.0, 39.0) == RiskLabel.PRANK

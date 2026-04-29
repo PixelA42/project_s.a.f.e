@@ -7,7 +7,7 @@ Current status:
 - Shared result dataclasses
 - Structured audio-processing exception
 
-Upcoming modules (next chunks):
+modules :
 - spectral_analyzer.py
 - intent_analyzer.py
 - score_fuser.py

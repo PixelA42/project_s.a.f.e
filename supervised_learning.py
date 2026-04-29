@@ -30,6 +30,7 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
     explained_variance_score,
+    fbeta_score,
     f1_score,
     log_loss,
     mean_absolute_error,
@@ -41,7 +42,14 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold, cross_val_predict, cross_validate
+from sklearn.model_selection import (
+    GridSearchCV,
+    KFold,
+    RandomizedSearchCV,
+    StratifiedKFold,
+    cross_val_predict,
+    cross_validate,
+)
 from sklearn.pipeline import Pipeline
 
 from config import SETTINGS
@@ -68,6 +76,12 @@ class SupervisedRunResult:
     artifact_index: pd.DataFrame
 
 
+def _to_python_scalar(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
 def run_supervised(
     dataset_path: str | Path | None = None,
     *,
@@ -84,6 +98,7 @@ def run_supervised(
     )
     output_path.mkdir(parents=True, exist_ok=True)
 
+    sample_weight = _build_sample_weight(loaded.y_labeled) if loaded.task_type == "classification" else None
     estimators = _build_estimators(loaded.task_type, random_state)
     if model_names is not None:
         requested = set(model_names)
@@ -109,39 +124,52 @@ def run_supervised(
             ]
         )
         scoring = _build_scoring(loaded.task_type, loaded.y_labeled)
+        estimator_for_cv = _build_search_estimator(
+            model_name=model_name,
+            task_type=loaded.task_type,
+            pipeline=pipeline,
+            cv=cv,
+            random_state=random_state,
+        )
+        fit_params = {}
+        if sample_weight is not None:
+            fit_params = {"model__sample_weight": sample_weight}
         cv_result = cross_validate(
-            pipeline,
+            estimator_for_cv,
             loaded.X_labeled_frame,
             loaded.y_labeled,
             cv=cv,
             scoring=scoring,
             return_train_score=False,
             n_jobs=1,
+            fit_params=fit_params,
         )
         fold_frame = _fold_metrics_frame(model_name, loaded.task_type, cv_result)
         fold_frames.append(fold_frame)
 
         oof_predictions = cross_val_predict(
-            pipeline,
+            estimator_for_cv,
             loaded.X_labeled_frame,
             loaded.y_labeled,
             cv=cv,
             method="predict",
             n_jobs=1,
+            fit_params=fit_params,
         )
         oof_probabilities = None
         if loaded.task_type == "classification":
             oof_probabilities = cross_val_predict(
-                pipeline,
+                estimator_for_cv,
                 loaded.X_labeled_frame,
                 loaded.y_labeled,
                 cv=cv,
                 method="predict_proba",
                 n_jobs=1,
+                fit_params=fit_params,
             )
 
-        fitted_pipeline = clone(pipeline)
-        fitted_pipeline.fit(loaded.X_labeled_frame, loaded.y_labeled)
+        fitted_pipeline = clone(estimator_for_cv)
+        fitted_pipeline.fit(loaded.X_labeled_frame, loaded.y_labeled, **fit_params)
         fitted_pipelines[model_name] = fitted_pipeline
 
         model_output_dir = output_path / model_name
@@ -168,6 +196,15 @@ def run_supervised(
             fitted_pipeline=fitted_pipeline,
             output_dir=model_output_dir,
         )
+        best_params_path = model_output_dir / "best_params.json"
+        if hasattr(fitted_pipeline, "best_params_"):
+            best_params_path.write_text(
+                json.dumps(getattr(fitted_pipeline, "best_params_"), indent=2),
+                encoding="utf-8",
+            )
+            artifact_rows.append(
+                {"model": model_name, "artifact_type": "best_params_json", "path": str(best_params_path)}
+            )
         metrics_rows.append(metrics_row)
         artifact_rows.extend(extra_artifacts)
 
@@ -220,6 +257,8 @@ def run_supervised(
         for metric_name in (
             "accuracy",
             "balanced_accuracy",
+            "positive_recall",
+            "f2_score",
             "f1_macro",
             "f1_weighted",
             "precision_macro",
@@ -267,21 +306,68 @@ def run_supervised(
     )
 
 
-def _build_estimators(task_type: str, random_state: int) -> dict[str, Any]:
+def _is_imbalanced_classification(task_type: str, target: pd.Series, ratio_threshold: float = 1.5) -> bool:
+    if task_type != "classification":
+        return False
+    counts = target.value_counts(dropna=True)
+    if counts.empty or len(counts) < 2:
+        return False
+    imbalance_ratio = float(counts.max() / max(1, counts.min()))
+    return imbalance_ratio >= ratio_threshold
+
+
+def _build_sample_weight(target: pd.Series) -> np.ndarray | None:
+    counts = target.value_counts(dropna=True)
+    if counts.size < 2:
+        return None
+
+    total_samples = float(counts.sum())
+    num_classes = float(counts.size)
+    weights = {
+        _to_python_scalar(label): total_samples / (num_classes * float(count))
+        for label, count in counts.items()
+    }
+    positive_label = _to_python_scalar(np.sort(counts.index.to_numpy())[-1])
+    if positive_label in weights:
+        weights[positive_label] *= SETTINGS.training.positive_class_weight_multiplier
+
+    return target.map(lambda label: float(weights[_to_python_scalar(label)])).to_numpy(dtype=float)
+
+
+def _binary_tracking_metrics(actual: np.ndarray, predictions: np.ndarray, classes: np.ndarray) -> dict[str, Any]:
+    if classes.size != 2:
+        return {}
+
+    positive_class = _to_python_scalar(classes[-1])
+    return {
+        "positive_class": positive_class,
+        "positive_recall": float(
+            recall_score(actual, predictions, pos_label=positive_class, zero_division=0)
+        ),
+        "f2_score": float(
+            fbeta_score(actual, predictions, beta=2.0, pos_label=positive_class, zero_division=0)
+        ),
+    }
+
+
+def _build_estimators(
+    task_type: str,
+    random_state: int,
+) -> dict[str, Any]:
     if task_type == "classification":
         return {
             "logistic_regression": LogisticRegression(
-                max_iter=1000,
+                max_iter=2000,
                 random_state=random_state,
             ),
             "random_forest": RandomForestClassifier(
-                n_estimators=300,
+                n_estimators=400,
                 random_state=random_state,
                 n_jobs=-1,
             ),
             "gradient_boosting": GradientBoostingClassifier(random_state=random_state),
             "extra_trees": ExtraTreesClassifier(
-                n_estimators=300,
+                n_estimators=400,
                 random_state=random_state,
                 n_jobs=-1,
             ),
@@ -291,17 +377,150 @@ def _build_estimators(task_type: str, random_state: int) -> dict[str, Any]:
         "linear_regression": LinearRegression(),
         "ridge": Ridge(random_state=random_state),
         "random_forest_regressor": RandomForestRegressor(
-            n_estimators=300,
+            n_estimators=400,
             random_state=random_state,
             n_jobs=-1,
         ),
         "gradient_boosting_regressor": GradientBoostingRegressor(random_state=random_state),
         "extra_trees_regressor": ExtraTreesRegressor(
-            n_estimators=300,
+            n_estimators=400,
             random_state=random_state,
             n_jobs=-1,
         ),
     }
+
+
+def _build_search_estimator(
+    *,
+    model_name: str,
+    task_type: str,
+    pipeline: Pipeline,
+    cv: Any,
+    random_state: int,
+) -> Any:
+    if task_type == "classification":
+        scoring = "f1_macro"
+        if model_name == "logistic_regression":
+            return GridSearchCV(
+                estimator=pipeline,
+                param_grid={
+                    "model__C": [0.05, 0.1, 0.5, 1.0, 3.0, 10.0],
+                    "model__solver": ["lbfgs"],
+                },
+                scoring=scoring,
+                cv=cv,
+                n_jobs=-1,
+                refit=True,
+            )
+        if model_name == "random_forest":
+            return RandomizedSearchCV(
+                estimator=pipeline,
+                param_distributions={
+                    "model__n_estimators": [250, 400, 600, 800],
+                    "model__max_depth": [None, 8, 12, 18, 24],
+                    "model__min_samples_split": [2, 5, 10, 20],
+                    "model__min_samples_leaf": [1, 2, 4, 8],
+                    "model__max_features": ["sqrt", "log2", 0.5, 0.75],
+                },
+                n_iter=18,
+                scoring=scoring,
+                cv=cv,
+                random_state=random_state,
+                n_jobs=-1,
+                refit=True,
+            )
+        if model_name == "extra_trees":
+            return RandomizedSearchCV(
+                estimator=pipeline,
+                param_distributions={
+                    "model__n_estimators": [250, 400, 600, 800],
+                    "model__max_depth": [None, 8, 12, 18, 24],
+                    "model__min_samples_split": [2, 5, 10, 20],
+                    "model__min_samples_leaf": [1, 2, 4, 8],
+                    "model__max_features": ["sqrt", "log2", 0.5, 0.75],
+                },
+                n_iter=18,
+                scoring=scoring,
+                cv=cv,
+                random_state=random_state,
+                n_jobs=-1,
+                refit=True,
+            )
+        if model_name == "gradient_boosting":
+            return RandomizedSearchCV(
+                estimator=pipeline,
+                param_distributions={
+                    "model__n_estimators": [100, 150, 250, 350],
+                    "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
+                    "model__max_depth": [2, 3, 4],
+                    "model__subsample": [0.7, 0.85, 1.0],
+                    "model__min_samples_leaf": [1, 2, 4],
+                },
+                n_iter=16,
+                scoring=scoring,
+                cv=cv,
+                random_state=random_state,
+                n_jobs=-1,
+                refit=True,
+            )
+        return pipeline
+
+    scoring = "r2"
+    if model_name == "linear_regression":
+        return pipeline
+    if model_name == "ridge":
+        return GridSearchCV(
+            estimator=pipeline,
+            param_grid={"model__alpha": [0.01, 0.1, 1.0, 5.0, 10.0, 25.0, 50.0]},
+            scoring=scoring,
+            cv=cv,
+            n_jobs=-1,
+            refit=True,
+        )
+    if model_name in {"random_forest_regressor", "extra_trees_regressor"}:
+        return RandomizedSearchCV(
+            estimator=pipeline,
+            param_distributions={
+                "model__n_estimators": [250, 400, 600, 800],
+                "model__max_depth": [None, 8, 12, 18, 24],
+                "model__min_samples_split": [2, 5, 10, 20],
+                "model__min_samples_leaf": [1, 2, 4, 8],
+                "model__max_features": ["sqrt", "log2", 0.5, 0.75],
+            },
+            n_iter=18,
+            scoring=scoring,
+            cv=cv,
+            random_state=random_state,
+            n_jobs=-1,
+            refit=True,
+        )
+    if model_name == "gradient_boosting_regressor":
+        return RandomizedSearchCV(
+            estimator=pipeline,
+            param_distributions={
+                "model__n_estimators": [100, 150, 250, 350],
+                "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "model__max_depth": [2, 3, 4],
+                "model__subsample": [0.7, 0.85, 1.0],
+                "model__min_samples_leaf": [1, 2, 4],
+            },
+            n_iter=16,
+            scoring=scoring,
+            cv=cv,
+            random_state=random_state,
+            n_jobs=-1,
+            refit=True,
+        )
+    return pipeline
+
+
+def _extract_pipeline_for_introspection(fitted_model: Any) -> Pipeline | None:
+    if isinstance(fitted_model, Pipeline):
+        return fitted_model
+    best_estimator = getattr(fitted_model, "best_estimator_", None)
+    if isinstance(best_estimator, Pipeline):
+        return best_estimator
+    return None
 
 
 def _build_cv_splitter(task_type: str, target: pd.Series, cv_folds: int, random_state: int) -> Any:
@@ -455,6 +674,7 @@ def _evaluate_classification(
         "pr_auc": np.nan,
         "log_loss": np.nan,
     }
+    metrics.update(_binary_tracking_metrics(actual, predictions, classes))
 
     if probabilities is not None:
         try:
@@ -554,11 +774,14 @@ def _evaluate_regression(
 
 def _save_feature_importances(
     model_name: str,
-    fitted_pipeline: Pipeline,
+    fitted_pipeline: Any,
     output_dir: Path,
 ) -> list[dict[str, Any]]:
-    model = fitted_pipeline.named_steps["model"]
-    preprocessor = fitted_pipeline.named_steps["preprocessor"]
+    resolved_pipeline = _extract_pipeline_for_introspection(fitted_pipeline)
+    if resolved_pipeline is None:
+        return []
+    model = resolved_pipeline.named_steps["model"]
+    preprocessor = resolved_pipeline.named_steps["preprocessor"]
     feature_names = np.asarray(preprocessor.get_feature_names_out())
     importances = None
 

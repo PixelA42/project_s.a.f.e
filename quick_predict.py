@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import joblib
 import librosa
@@ -31,6 +32,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep generated temp spectrogram image",
     )
+    parser.add_argument(
+        "--decision-threshold",
+        type=float,
+        default=SETTINGS.training.decision_threshold,
+        help="Probability threshold for the positive class; lower values increase recall at the cost of more false positives",
+    )
     return parser.parse_args()
 
 
@@ -41,6 +48,31 @@ def resize_grayscale_image(image: np.ndarray, size: int) -> np.ndarray:
     row_idx = np.linspace(0, max(0, height - 1), size).astype(int)
     col_idx = np.linspace(0, max(0, width - 1), size).astype(int)
     return image[np.ix_(row_idx, col_idx)]
+
+
+def _predict_with_threshold(
+    model: Any,
+    features: np.ndarray,
+    threshold: float,
+) -> tuple[int, dict[int, float], float | None, int | None]:
+    if not hasattr(model, "predict_proba"):
+        prediction = int(model.predict(features)[0])
+        return prediction, {}, None, None
+
+    probabilities = model.predict_proba(features)[0]
+    classes = list(model.classes_)
+    probability_map = {int(label): float(prob) for label, prob in zip(classes, probabilities)}
+
+    if len(classes) == 2 and 1 in classes:
+        positive_index = classes.index(1)
+    else:
+        positive_index = len(classes) - 1
+
+    positive_probability = float(probabilities[positive_index])
+    positive_label = int(classes[positive_index]) if classes else 1
+    negative_label = int(classes[0]) if classes else 0
+    prediction = positive_label if positive_probability >= threshold else negative_label
+    return prediction, probability_map, positive_probability, positive_label
 
 
 def main() -> None:
@@ -91,18 +123,19 @@ def main() -> None:
     features_scaled = feature_pipeline["scaler"].transform(features)
     features_reduced = feature_pipeline["pca"].transform(features_scaled)
 
-    prediction = int(model.predict(features_reduced)[0])
-    if hasattr(model, "predict_proba"):
-        probabilities = model.predict_proba(features_reduced)[0]
-        classes = list(model.classes_)
-        probability_map = {int(label): float(prob) for label, prob in zip(classes, probabilities)}
-    else:
-        probability_map = {}
+    prediction, probability_map, positive_probability, positive_label = _predict_with_threshold(
+        model,
+        features_reduced,
+        args.decision_threshold,
+    )
 
     label_text = "AI" if prediction == 1 else "HUMAN"
 
     print("Input:", input_audio)
     print("Prediction:", prediction, f"({label_text})")
+    print("Decision threshold:", args.decision_threshold)
+    if positive_probability is not None and positive_label is not None:
+        print(f"Positive class probability (label={positive_label}):", positive_probability)
     print("Probabilities:", probability_map)
     print("Temp spectrogram:", PATHS.temp_spectrogram_path)
 

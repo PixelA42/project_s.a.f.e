@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
-import soundfile as sf
 from hypothesis import given, settings, strategies as st
 from hypothesis import HealthCheck
 import joblib
 import json
+import wave
 
 from coreML.intent_analyzer import IntentAnalyzer
 from coreML.errors import AudioProcessingError
@@ -20,7 +20,12 @@ class _DummyWhisperModel:
 
 def _silent_wav(path: str, duration: float = 0.4, sample_rate: int = 16000) -> None:
     signal = np.zeros(int(sample_rate * duration), dtype=np.float32)
-    sf.write(path, signal, sample_rate)
+    pcm = (signal * 32767).astype(np.int16)
+    with wave.open(path, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm.tobytes())
 
 
 @pytest.fixture
@@ -131,3 +136,28 @@ def test_intent_training_serializes_model(tmp_path, monkeypatch):
     artifact = joblib.load(str(tmp_path / "intent_model.joblib"))
     assert "vectorizer" in artifact
     assert "classifier" in artifact
+
+
+def test_intent_analysis_completes_within_timeout_for_60s_audio(monkeypatch, tmp_path):
+    monkeypatch.setattr(IntentAnalyzer, "_safe_load_spacy_model", lambda self: None)
+    monkeypatch.setattr(IntentAnalyzer, "_ensure_nltk_tokenizer", lambda self: None)
+    monkeypatch.setattr(
+        IntentAnalyzer,
+        "_load_whisper_model",
+        staticmethod(lambda: _DummyWhisperModel("transfer money now")),
+    )
+
+    analyzer = IntentAnalyzer(timeout_seconds=10, model_path=str(tmp_path / "intent_model.joblib"))
+    monkeypatch.setattr(
+        analyzer,
+        "_transcribe_audio",
+        lambda _path: "transfer money now please hurry",
+    )
+
+    audio_path = tmp_path / "long_60s.wav"
+    _silent_wav(str(audio_path), duration=60.0, sample_rate=8000)
+
+    result = analyzer.analyze(str(audio_path))
+
+    assert 0.0 <= result.intent_score <= 100.0
+    assert result.processing_time_ms <= 10_000

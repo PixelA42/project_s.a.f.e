@@ -124,5 +124,12 @@ projectsafe/node_modules/
 projectsafe/dist/
 projectsafe/.vite/
 GUIDES\guide_to_completion.txt
+GUIDES\present_stack.md
+GUIDES\REQUIREMENT_7_COMPLETION.md
 
-
+# Local temp files
+.python_history
+*.bak
+*.orig
+*.rej
+*.tmp

@@ -137,11 +137,11 @@ def _persist_call_log(
   final_score: float,
   risk_label: str,
   anomaly_flag: bool,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, str | None]:
   request_id = _request_id()
   try:
     with get_session() as session:
-      record_call_log(
+      record = record_call_log(
         session,
         caller_id=caller_id,
         audio_file_path=audio_file_path,
@@ -152,10 +152,10 @@ def _persist_call_log(
         risk_label=risk_label,
         anomaly_flag=anomaly_flag,
       )
-    return True, request_id
+    return True, request_id, str(record.id)
   except Exception:
     current_app.logger.exception("[Analyze] failed to persist call log request_id=%s", request_id)
-    return False, request_id
+    return False, request_id, None
 
 
 @analyze_bp.route("/analyze", methods=["POST"])
@@ -381,7 +381,7 @@ def evaluate_risk():
     final_score, risk_label = _classify_risk(body.spectral_score, body.intent_score)
     audio_file_path = body.audio_file_path or f"request://{_request_id()}"
 
-    ok, request_id = _persist_call_log(
+    ok, request_id, call_log_id = _persist_call_log(
       caller_id=body.caller_id,
       audio_file_path=audio_file_path,
       transcript=None,
@@ -403,6 +403,7 @@ def evaluate_risk():
         audio_file_path=audio_file_path,
     ).model_dump(exclude_none=True)
     response["request_id"] = request_id
+    response["id"] = call_log_id
     response["timestamp"] = datetime.now(timezone.utc).isoformat()
     return jsonify(response), 200
 

@@ -88,9 +88,11 @@ class TrainingConfig:
     pca_components: int = 40
     embedding_method: str = "tsne"
     pseudo_threshold: float = 0.85
+    decision_threshold: float = 0.5
     semi_unlabeled_ratio: float = 0.3
     random_forest_n_estimators: int = 350
     random_forest_n_jobs: int = -1
+    positive_class_weight_multiplier: float = 1.5
     kmeans_max_clusters: int = 8
     kmeans_n_init: str = "auto"
     tsne_perplexity_cap: int = 30

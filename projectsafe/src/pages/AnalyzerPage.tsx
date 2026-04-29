@@ -2,7 +2,6 @@
  * Wraps the existing call analyzer UI (previously in App.tsx)
  * into a proper routed page.
  */
-import { AnimatePresence } from 'framer-motion';
 import { useScoreEngine } from '@/hooks/useScoreEngine';
 import { PhoneFrame } from '@/components/shared/PhoneFrame';
 import { LoadingState } from '@/components/CallScreen/LoadingState';
@@ -16,6 +15,13 @@ const BG_MAP = {
   safe:     'linear-gradient(160deg, #0d1f18 0%, #0f2d20 50%, #1a3a2a 100%)',
   prank:    'linear-gradient(160deg, #1a1400 0%, #261c00 50%, #332400 100%)',
   high_risk:'linear-gradient(160deg, #1a0000 0%, #2d0000 50%, #3d0505 100%)',
+} as const;
+
+const PAGE_BG_MAP = {
+  loading: 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0a0a12 60%)',
+  safe: 'radial-gradient(ellipse at 50% 0%, #123025 0%, #08130f 65%)',
+  prank: 'radial-gradient(ellipse at 50% 0%, #3a2a08 0%, #110d05 65%)',
+  high_risk: 'radial-gradient(ellipse at 50% 0%, #430707 0%, #140303 65%)',
 } as const;
 
 export function AnalyzerPage() {
@@ -35,7 +41,7 @@ export function AnalyzerPage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-4 py-8 pt-[80px]"
-      style={{ background: 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0a0a12 60%)' }}
+      style={{ background: PAGE_BG_MAP[uiState] }}
     >
       <div className="text-center mb-6">
         <h1 className="font-display text-2xl font-extrabold tracking-tight text-white">
@@ -55,11 +61,9 @@ export function AnalyzerPage() {
         </p>
       </div>
 
-      <AnimatePresence mode="wait">
-        <PhoneFrame background={BG_MAP[uiState]} key={uiState}>
-          {renderScreen()}
-        </PhoneFrame>
-      </AnimatePresence>
+      <PhoneFrame background={BG_MAP[uiState]} key={uiState}>
+        {renderScreen()}
+      </PhoneFrame>
 
       <DevControls onSimulate={analyzeCall} isLoading={isLoading} />
 

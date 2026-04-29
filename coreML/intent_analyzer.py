@@ -1,6 +1,7 @@
 """Intent analyzer contracts for transcription and urgency scoring."""
 
 import csv
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from time import perf_counter

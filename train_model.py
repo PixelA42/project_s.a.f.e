@@ -28,6 +28,7 @@ from sklearn.metrics import (
 	balanced_accuracy_score,
 	classification_report,
 	confusion_matrix,
+	fbeta_score,
 	f1_score,
 	log_loss,
 	precision_score,
@@ -36,7 +37,7 @@ from sklearn.metrics import (
 	silhouette_score,
 )
 from sklearn.manifold import TSNE
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from config import SETTINGS
@@ -87,6 +88,40 @@ def _ordered_labels(*label_sets: np.ndarray) -> list[Any]:
 			if label not in ordered:
 				ordered.append(label)
 	return ordered
+
+
+def _build_class_weight(y_train: np.ndarray) -> dict[Any, float] | None:
+	labels = pd.Series(y_train).dropna()
+	class_counts = labels.value_counts()
+	if class_counts.size < 2:
+		return None
+
+	total_samples = float(class_counts.sum())
+	num_classes = float(class_counts.size)
+	class_weight = {
+		_to_python_scalar(label): total_samples / (num_classes * float(count))
+		for label, count in class_counts.items()
+	}
+	positive_label = _to_python_scalar(np.sort(class_counts.index.to_numpy())[-1])
+	if positive_label in class_weight:
+		class_weight[positive_label] *= TRAINING_CONFIG.positive_class_weight_multiplier
+	return class_weight
+
+
+def _binary_tracking_metrics(y_true: np.ndarray, y_pred: np.ndarray, classes: np.ndarray) -> dict[str, float | Any]:
+	metrics: dict[str, float | Any] = {}
+	if classes.size != 2:
+		return metrics
+
+	positive_class = _to_python_scalar(classes[-1])
+	metrics["positive_class"] = positive_class
+	metrics["positive_recall"] = float(
+		recall_score(y_true, y_pred, pos_label=positive_class, zero_division=0)
+	)
+	metrics["f2_score"] = float(
+		fbeta_score(y_true, y_pred, beta=2.0, pos_label=positive_class, zero_division=0)
+	)
+	return metrics
 
 
 def parse_args() -> argparse.Namespace:
@@ -421,13 +456,37 @@ def _train_supervised(
 	n_estimators: int = TRAINING_CONFIG.random_forest_n_estimators,
 	n_jobs: int = TRAINING_CONFIG.random_forest_n_jobs,
 ) -> tuple[RandomForestClassifier, dict[str, Any]]:
-	model = RandomForestClassifier(
+	class_counts = pd.Series(y_train).value_counts()
+	is_imbalanced = bool(
+		len(class_counts) > 1 and (class_counts.max() / max(1, class_counts.min())) >= 1.5
+	)
+	base_model = RandomForestClassifier(
 		n_estimators=n_estimators,
 		random_state=random_state,
 		n_jobs=n_jobs,
+		class_weight=_build_class_weight(y_train),
 	)
-	model.fit(x_train, y_train)
+	search = RandomizedSearchCV(
+		estimator=base_model,
+		param_distributions={
+			"n_estimators": [250, 350, 500, 700],
+			"max_depth": [None, 8, 12, 18, 24],
+			"min_samples_split": [2, 5, 10, 20],
+			"min_samples_leaf": [1, 2, 4, 8],
+			"max_features": ["sqrt", "log2", 0.5, 0.75],
+		},
+		n_iter=18,
+		scoring="f1_macro",
+		cv=StratifiedKFold(n_splits=4, shuffle=True, random_state=random_state),
+		random_state=random_state,
+		n_jobs=-1,
+		refit=True,
+	)
+	search.fit(x_train, y_train)
+	model = search.best_estimator_
 	metrics = _compute_classification_metrics(model, x_test, y_test)
+	metrics["is_imbalanced"] = is_imbalanced
+	metrics["best_params"] = {str(k): _to_python_scalar(v) for k, v in search.best_params_.items()}
 	return model, metrics
 
 
@@ -470,6 +529,7 @@ def _compute_classification_metrics(
 		"roc_auc": None,
 		"pr_auc": None,
 	}
+	metrics.update(_binary_tracking_metrics(y_test, preds, classes))
 
 	if probs is not None:
 		test_classes = _ordered_labels(y_test)
@@ -816,15 +876,19 @@ def main() -> None:
 	print("\nTraining complete.")
 	print("\nModel metrics summary:")
 	print(
-		"- Supervised   | Acc={:.4f}, MacroF1={:.4f}, ROC_AUC={}".format(
+		"- Supervised   | Acc={:.4f}, Recall={:.4f}, F2={:.4f}, MacroF1={:.4f}, ROC_AUC={}".format(
 			report["metrics"]["supervised"].get("accuracy", 0.0),
+			report["metrics"]["supervised"].get("positive_recall", 0.0),
+			report["metrics"]["supervised"].get("f2_score", 0.0),
 			report["metrics"]["supervised"].get("macro_f1", 0.0),
 			report["metrics"]["supervised"].get("roc_auc"),
 		)
 	)
 	print(
-		"- Semi-superv. | Acc={:.4f}, MacroF1={:.4f}, ROC_AUC={}, PseudoAdded={}".format(
+		"- Semi-superv. | Acc={:.4f}, Recall={:.4f}, F2={:.4f}, MacroF1={:.4f}, ROC_AUC={}, PseudoAdded={}".format(
 			report["metrics"]["semisupervised"].get("accuracy", 0.0),
+			report["metrics"]["semisupervised"].get("positive_recall", 0.0),
+			report["metrics"]["semisupervised"].get("f2_score", 0.0),
 			report["metrics"]["semisupervised"].get("macro_f1", 0.0),
 			report["metrics"]["semisupervised"].get("roc_auc"),
 			report["metrics"]["semisupervised"].get("pseudo_labels_added", 0),

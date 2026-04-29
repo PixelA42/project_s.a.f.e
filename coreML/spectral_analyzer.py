@@ -1,5 +1,6 @@
-"""Spectral analyzer for MFCC extraction, training, and inference."""
+"""Spectral analyzer for MFCC extraction, caching, training, and inference."""
 
+import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
@@ -41,6 +42,7 @@ class SpectralAnalyzer:
         timeout_seconds: int = SPECTRAL_TIMEOUT_SECONDS,
         model_path: str = str(PATHS.spectral_model_path),
         training_report_path: str = str(PATHS.spectral_training_report_path),
+        feature_cache_dir: str = str(PATHS.outputs_dir / "mfcc_cache"),
         n_clusters: int = CORE_CONFIG.spectral_cluster_count,
         random_state: int = GENERAL_CONFIG.random_seed,
     ) -> None:
@@ -48,6 +50,7 @@ class SpectralAnalyzer:
         self.timeout_seconds = timeout_seconds
         self.model_path = model_path
         self.training_report_path = training_report_path
+        self.feature_cache_dir = feature_cache_dir
         self.n_clusters = n_clusters
         self.random_state = random_state
 
@@ -105,7 +108,11 @@ class SpectralAnalyzer:
             )
         return value
 
-    def extract_features(self, audio_file_path: str) -> np.ndarray:
+    def _get_feature_cache_path(self, audio_file_path: str) -> str:
+        digest = hashlib.sha256(audio_file_path.encode("utf-8")).hexdigest()
+        return os.path.join(self.feature_cache_dir, f"{digest}.npy")
+
+    def extract_features(self, audio_file_path: str, cache_to_disk: bool = True) -> np.ndarray:
         """Return MFCC feature matrix of shape (40, time_frames), dtype float32."""
         if not audio_file_path:
             raise AudioProcessingError(
@@ -151,7 +158,11 @@ class SpectralAnalyzer:
                 description="Extracted MFCC features are empty or malformed.",
             )
 
-        return mfcc_features.astype(np.float32, copy=False)
+        features = mfcc_features.astype(np.float32, copy=False)
+        if cache_to_disk and self.feature_cache_dir:
+            cache_path = self._get_feature_cache_path(audio_file_path)
+            self.serialize_features(features, cache_path)
+        return features
 
     def train(
         self,
@@ -374,6 +385,15 @@ class SpectralAnalyzer:
             raise AudioProcessingError(
                 error_code="FEATURES_INVALID_SHAPE",
                 description="Deserialized features are empty or malformed.",
+            )
+
+        if int(features.shape[0]) != int(self.n_mfcc):
+            raise AudioProcessingError(
+                error_code="FEATURES_INVALID_MFCC_DIMENSION",
+                description=(
+                    f"Deserialized features must have {self.n_mfcc} MFCC coefficients "
+                    f"on axis 0, got {features.shape[0]}."
+                ),
             )
 
         return features.astype(np.float32, copy=False)

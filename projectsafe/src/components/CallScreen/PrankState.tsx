@@ -58,7 +58,7 @@ export function PrankState({ data, onDecline, onAccept }: PrankStateProps) {
         transition={{ delay: 0.15 }}
       >
         <h3 className="font-display text-[13px] font-bold mb-2" style={{ color: accent }}>
-          ⚡ Synthetic Voice Detected
+          ⚡ AI-Generated Voice Detected
         </h3>
         <p className="font-mono text-[11px] leading-relaxed mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
           AI-generated voice with harmless content. No financial coercion, threats, or urgency signals found.
