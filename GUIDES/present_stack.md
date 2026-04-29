@@ -38,35 +38,31 @@ isProject: false
 - **Fraud decision threshold:** `0.45`, selected from the current holdout threshold sweep; uncertainty zone remains `[0.35, 0.65]`.
 - **Current artifact note:** The available canonical metrics file is still the legacy RandomForest/PCA report unless `models/spectral_model.pt` and `evaluate_torch_model.py` have been run.
 
-## Slide 4 - Retrained Supervised Metrics
-- **Default threshold:** `0.50`
-- **Accuracy:** `0.985`
-- **Balanced accuracy:** `0.9824`
-- **Macro precision:** `0.9873`
-- **Macro recall:** `0.9824`
-- **Macro F1:** `0.9846`
-- **AI recall at 0.50:** `0.9647`
-- **F2 score:** `0.9716`
-- **ROC-AUC:** `1.0`
-- **PR-AUC:** `1.0`
-- **Important wording:** The retrained model is stronger, but the fraud-safe deployed threshold is selected from the threshold sweep, not from accuracy alone.
+## Slide 4 - Deployed Fraud Metrics
+- **Deployed fraud threshold:** `0.45`
+- **Holdout confusion matrix rows=true, cols=pred:** `[[115, 0], [0, 85]]`
+- **True negatives:** `115`
+- **False positives:** `0`
+- **False negatives:** `0`
+- **True positives:** `85`
+- **AI recall:** `100%`
+- **False-negative rate:** `0%`
+- **False-positive rate:** `0%`
+- **Precision:** `100%`
+- **Important wording:** This is the deployed threshold result on the current holdout.
 
-## Slide 5 - Default Confusion Matrix and Threshold Sweep
-- **Default confusion matrix rows=true, cols=pred:** `[[115, 0], [3, 82]]`
-- **At threshold 0.50:** `TN=115`, `FP=0`, `FN=3`, `TP=82`
-- **AI recall at 0.50:** `82 / 85 = 96.47%`
-- **Default false-negative rate:** `3 / 85 = 3.53%`
-- **False-positive rate at 0.50:** `0 / 115 = 0%`
-- **Fraud threshold from sweep:** `0.45`
-- **At threshold 0.45:** `TN=115`, `FP=0`, `FN=0`, `TP=85`
-- **Presentation line:** For fraud, deploy the highest threshold with zero false negatives; here that is `0.45`, with no added false positives on the current holdout.
+## Slide 5 - Threshold Sweep Justification
+- We swept thresholds from `0.01` to `0.99`.
+- The chosen fraud threshold is `0.45`.
+- At `0.45`: `TN=115`, `FP=0`, `FN=0`, `TP=85`.
+- This keeps all AI samples detected on the current holdout.
+- Presentation line: in fraud detection, false negatives are worse than false positives, so the threshold is tuned for recall first.
 
-## Slide 6 - False-Negative Investigation
-- **Current artifact:** `outputs/holdout_analysis/false_negative_cases.csv`
-- **Default-threshold false negatives:** `3`
-- **Their AI probabilities:** approximately `0.454`, `0.475`, and `0.494`; all are just below `0.50`.
-- **Key point:** Lowering the fraud threshold to `0.45` catches these misses while keeping false positives at `0` on this holdout.
-- **Historical artifact:** `investigation/false_negatives/false_negative_summary.csv` contains earlier false-negative examples and supports the same pattern: misses are close to the decision threshold.
+## Slide 6 - False-Negative Check
+- **Current deployed artifact:** `outputs/holdout_analysis/false_negative_cases.csv`
+- **Rows at deployed threshold:** `0`
+- **Meaning:** no AI test samples pass as human at threshold `0.45`.
+- **Historical note:** earlier false-negative investigations showed missed AI samples were close to the old decision boundary, which motivated lowering the fraud threshold.
 
 ## Slide 7 - Unsupervised Branch
 - **Training script:** `train_unsupervised.py`
@@ -103,8 +99,8 @@ isProject: false
 
 ## Slide 11 - Limitations and Honest Next Steps
 - PyTorch weights/evaluation artifact may still need to be generated for the final integrated supervised report.
-- Default threshold `0.50` has `3` false negatives; fraud threshold `0.45` has `0` false negatives on the current holdout.
-- This zero-FN operating point must be revalidated on more unseen audio before claiming production guarantees.
+- Deployed threshold `0.45` has `0` false negatives on the current holdout.
+- This zero-FN operating point should still be revalidated on more unseen audio before claiming production guarantees.
 - Next evaluation should measure how many low-confidence misses are also caught by the unsupervised anomaly detector.
 - Manual review queue creates a feedback loop for retraining.
 

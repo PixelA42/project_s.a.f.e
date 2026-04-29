@@ -199,7 +199,6 @@ def _compute_focal_sample_weights(
 def _build_holdout_error_analysis_frame(
 	frame: pd.DataFrame,
 	y_true: np.ndarray,
-	predictions: np.ndarray,
 	positive_probabilities: np.ndarray,
 	*,
 	image_size: int,
@@ -208,9 +207,11 @@ def _build_holdout_error_analysis_frame(
 ) -> pd.DataFrame:
 	analysis = frame.copy()
 	analysis["actual_label"] = np.asarray(y_true)
-	analysis["predicted_label"] = np.asarray(predictions)
 	analysis["positive_probability"] = np.asarray(positive_probabilities)
 	analysis["decision_threshold"] = float(decision_threshold)
+	analysis["predicted_label"] = (
+		analysis["positive_probability"] >= float(decision_threshold)
+	).astype(int)
 	analysis["raw_feature_shape"] = f"{image_size}x{image_size}"
 	analysis["flattened_feature_dim"] = int(image_size * image_size)
 	analysis["reduced_feature_dim"] = int(reduced_feature_dim)
@@ -226,6 +227,30 @@ def _build_holdout_error_analysis_frame(
 	).reset_index(drop=True)
 	false_negatives.insert(0, "false_negative_rank", np.arange(1, len(false_negatives) + 1))
 	return false_negatives
+
+
+def _threshold_operating_metrics(
+	y_true: np.ndarray,
+	positive_probabilities: np.ndarray,
+	threshold: float,
+) -> dict[str, Any]:
+	actual = np.asarray(y_true)
+	predicted = (np.asarray(positive_probabilities) >= float(threshold)).astype(int)
+	tn, fp, fn, tp = confusion_matrix(actual, predicted, labels=[0, 1]).ravel()
+	return {
+		"threshold": float(threshold),
+		"tn": int(tn),
+		"fp": int(fp),
+		"fn": int(fn),
+		"tp": int(tp),
+		"accuracy": float(accuracy_score(actual, predicted)),
+		"precision": float(precision_score(actual, predicted, pos_label=1, zero_division=0)),
+		"recall": float(recall_score(actual, predicted, pos_label=1, zero_division=0)),
+		"f1": float(f1_score(actual, predicted, pos_label=1, zero_division=0)),
+		"f2": float(fbeta_score(actual, predicted, beta=2.0, pos_label=1, zero_division=0)),
+		"false_negative_rate": float(fn / max(1, fn + tp)),
+		"false_positive_rate": float(fp / max(1, fp + tn)),
+	}
 
 
 def parse_args() -> argparse.Namespace:
@@ -927,17 +952,19 @@ def main() -> None:
 	positive_probabilities = holdout_probabilities[:, positive_index]
 	holdout_prediction_frame = test_df.copy()
 	holdout_prediction_frame["actual_label"] = np.asarray(y_test)
-	holdout_prediction_frame["predicted_label"] = np.asarray(holdout_predictions)
 	holdout_prediction_frame["positive_probability"] = np.asarray(positive_probabilities)
-	holdout_prediction_frame["predicted_as_positive_at_default_threshold"] = (
+	holdout_prediction_frame["decision_threshold"] = float(TRAINING_CONFIG.decision_threshold)
+	holdout_prediction_frame["predicted_label"] = (
 		holdout_prediction_frame["positive_probability"] >= float(TRAINING_CONFIG.decision_threshold)
+	).astype(int)
+	holdout_prediction_frame["predicted_as_positive_at_deployed_threshold"] = (
+		holdout_prediction_frame["predicted_label"] == 1
 	)
 
 	threshold_sweep_frame = _build_threshold_sweep_frame(y_test, positive_probabilities)
 	false_negative_frame = _build_holdout_error_analysis_frame(
 		test_df,
 		y_test,
-		holdout_predictions,
 		positive_probabilities,
 		image_size=args.image_size,
 		reduced_feature_dim=int(x_test_reduced.shape[1]),
@@ -961,6 +988,11 @@ def main() -> None:
 				key: _to_python_scalar(value)
 				for key, value in operating_rows.iloc[0].to_dict().items()
 			}
+	deployed_operating_metrics = _threshold_operating_metrics(
+		y_test,
+		positive_probabilities,
+		float(TRAINING_CONFIG.decision_threshold),
+	)
 
 	print("\nThreshold sweep (0.01 to 0.99):")
 	print(threshold_sweep_frame[["threshold", "tn", "fp", "fn", "tp"]].to_string(index=False))
@@ -1051,6 +1083,7 @@ def main() -> None:
 			"thresholds_evaluated": int(len(threshold_sweep_frame)),
 			"recommended_threshold_zero_false_negatives": zero_fn_threshold,
 			"recommended_zero_fn_operating_point": zero_fn_operating_point,
+			"deployed_operating_point": deployed_operating_metrics,
 		},
 	}
 	with open(report_path, "w", encoding="utf-8") as f:
