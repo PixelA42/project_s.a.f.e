@@ -1,0 +1,10 @@
+ADD 2023 Challenge: http://addchallenge.cn/add2023
+ADD 2023 Datasets: http://addchallenge.cn/downloadADD2023
+AUDETER Datasets (Hugging Face): https://huggingface.co/datasets/wqz995/AUDETER
+Daily Papers (Hugging Face): https://huggingface.co/papers
+ (DeepFake query: https://huggingface.co/papers?q=DeepFake)
+Robocall Audio Dataset (GitHub): https://github.com/wspr-ncsu/robocall-audio-dataset
+Scam and Non-Scam Call Conversation Dataset (Kaggle): https://www.kaggle.com/datasets/teeconnie/scam-and-non-scam-call-conversation-dataset
+TeleAntiFraud (GitHub): https://github.com/JimmyMa99/TeleAntiFraud
+Threat Detection Audio Dataset (Kaggle): https://www.kaggle.com/datasets/mohithjain04/threat-detection-audio-dataset
+WaveFake: DeepFake Audio Detection Dataset (Kaggle): https://www.kaggle.com/datasets/walimuhammadahmad/fakeaudio
