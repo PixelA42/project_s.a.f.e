@@ -126,6 +126,8 @@ projectsafe/.vite/
 GUIDES\guide_to_completion.txt
 GUIDES\present_stack.md
 GUIDES\REQUIREMENT_7_COMPLETION.md
+investigation\false_negatives\
+GUIDES\present_stack.md
 
 # Local temp files
 .python_history

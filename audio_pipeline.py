@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from config import SETTINGS
+from data_pipeline.audio_utils import AudioNormalizer, AudioPaddingMethod
 
 
 warnings.filterwarnings("ignore")
@@ -19,6 +20,11 @@ warnings.filterwarnings("ignore")
 AUDIO_CONFIG = SETTINGS.audio
 GENERAL_CONFIG = SETTINGS.general
 PATHS = SETTINGS.paths
+SHORT_AUDIO_NORMALIZER = AudioNormalizer(
+    target_duration_seconds=3.0,
+    sample_rate=AUDIO_CONFIG.sample_rate,
+    padding_method=AudioPaddingMethod.REFLECT_MIRROR,
+)
 
 
 def load_audio(filepath: Path) -> tuple[np.ndarray | None, int | None]:
@@ -29,10 +35,10 @@ def load_audio(filepath: Path) -> tuple[np.ndarray | None, int | None]:
             duration=AUDIO_CONFIG.clip_duration_seconds,
             mono=True,
         )
-        if len(audio_signal) < sample_rate:
-            print(f"  [SKIP] Too short: {filepath}")
-            return None, None
-        return audio_signal, sample_rate
+        audio_signal = SHORT_AUDIO_NORMALIZER.normalize_signal(audio_signal)
+        if len(audio_signal) < int(3.0 * sample_rate):
+            audio_signal = SHORT_AUDIO_NORMALIZER.pad_short_audio(audio_signal)
+        return audio_signal.astype(np.float32), sample_rate
     except Exception as exc:
         print(f"  [ERROR] Could not load {filepath}: {exc}")
         return None, None

@@ -213,3 +213,38 @@ class DataPipeline:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w") as f:
             json.dump(manifest.to_dict(), f, indent=2)
+
+    def transform_audio_for_deep_models(
+        self,
+        audio_paths: list[str],
+        tensor_config: "TensorConfig | None" = None,
+    ) -> dict[str, "torch.Tensor"]:
+        """Convert audio paths to model-ready tensors for AASIST/SpecRNet.
+
+        Returns tensors with deterministic shapes:
+        - aasist_waveform: (batch, 1, 64000)
+        - aasist_spectrogram: (batch, 128, 400)
+        - specrnet_spectrogram: (batch, 1, 128, 400)
+        """
+        import torch
+        from .deep_learning_loaders import DeepModelBatchBuilder
+
+        builder = DeepModelBatchBuilder(tensor_config=tensor_config)
+        aasist_waveforms: list[torch.Tensor] = []
+        aasist_spectra: list[torch.Tensor] = []
+        specrnet_specs: list[torch.Tensor] = []
+
+        for audio_path in audio_paths:
+            signal = builder.load_and_preprocess(audio_path)
+            aasist_waveforms.append(builder.build_aasist_waveform_tensor(signal))
+            aasist_spectra.append(builder.build_aasist_spectral_tensor(signal))
+            specrnet_specs.append(builder.build_specrnet_tensor(signal))
+
+        if not aasist_waveforms:
+            raise ValueError("audio_paths cannot be empty")
+
+        return {
+            "aasist_waveform": torch.stack(aasist_waveforms, dim=0),
+            "aasist_spectrogram": torch.stack(aasist_spectra, dim=0),
+            "specrnet_spectrogram": torch.stack(specrnet_specs, dim=0),
+        }

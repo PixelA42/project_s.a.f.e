@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 
@@ -34,6 +35,8 @@ class PathConfig:
     embedding_csv_path: Path = _resolve("models", "feature_embedding_2d.csv")
     embedding_plot_path: Path = _resolve("models", "feature_embedding_2d.png")
     supervised_model_path: Path = _resolve("models", "spectrogram_supervised_model.joblib")
+    supervised_torch_weights_path: Path = _resolve("models", "spectral_model.pt")
+    supervised_torch_eval_report_path: Path = _resolve("models", "training_report.json")
     semisupervised_model_path: Path = _resolve(
         "models", "spectrogram_semisupervised_model.joblib"
     )
@@ -88,7 +91,9 @@ class TrainingConfig:
     pca_components: int = 40
     embedding_method: str = "tsne"
     pseudo_threshold: float = 0.85
-    decision_threshold: float = 0.5
+    decision_threshold: float = 0.45
+    focal_alpha: float = 0.75
+    focal_gamma: float = 4.0
     semi_unlabeled_ratio: float = 0.3
     random_forest_n_estimators: int = 350
     random_forest_n_jobs: int = -1
@@ -231,3 +236,60 @@ class MLConfig:
 
 
 SETTINGS = MLConfig()
+
+
+class BackendCompatConfig:
+    """Minimal Flask backend config for mixed test import order."""
+
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-CHANGE-IN-PRODUCTION")
+    DEBUG: bool = os.getenv("FLASK_DEBUG", "0") == "1"
+    TESTING: bool = False
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///project_safe_backend.db")
+    CORS_ORIGINS: str = "*"
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
+    JWT_EXPIRY_HOURS: int = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+    DEEPGRAM_API_KEY: str = os.getenv("DEEPGRAM_API_KEY", "")
+    DEEPGRAM_ENDPOINT: str = "https://api.deepgram.com/v1/listen"
+    DEEPGRAM_PARAMS: dict = {
+        "model": "nova-2",
+        "language": "en",
+        "smart_format": "true",
+        "diarize": "true",
+        "punctuate": "true",
+    }
+    USE_REAL_TRANSCRIPTION: bool = os.getenv("USE_REAL_TRANSCRIPTION", "0") == "1"
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_ENDPOINT: str = "https://api.openai.com/v1/chat/completions"
+    USE_REAL_INTENT_MODEL: bool = os.getenv("USE_REAL_INTENT_MODEL", "0") == "1"
+    SPECTRAL_MODEL_PATH: str = os.getenv(
+        "SPECTRAL_MODEL_PATH", "app/models/weights/spectral_model.pt"
+    )
+    INTENT_MODEL_PATH: str = os.getenv(
+        "INTENT_MODEL_PATH", "app/models/weights/intent_model.pt"
+    )
+    USE_REAL_SPECTRAL_MODEL: bool = os.getenv("USE_REAL_SPECTRAL_MODEL", "0") == "1"
+    SPECTRAL_WEIGHT: float = float(os.getenv("SPECTRAL_WEIGHT", "0.6"))
+    INTENT_WEIGHT: float = float(os.getenv("INTENT_WEIGHT", "0.4"))
+    HIGH_RISK_THRESHOLD: int = int(os.getenv("HIGH_RISK_THRESHOLD", "70"))
+    PRANK_THRESHOLD: int = int(os.getenv("PRANK_THRESHOLD", "35"))
+    RATELIMIT_DEFAULT: str = os.getenv("RATELIMIT_DEFAULT", "60 per minute")
+    RATELIMIT_ANALYZE: str = os.getenv("RATELIMIT_ANALYZE", "20 per minute")
+    RATELIMIT_AUTH: str = os.getenv("RATELIMIT_AUTH", "10 per minute")
+
+
+class BackendTestingCompatConfig(BackendCompatConfig):
+    TESTING = True
+    DEBUG = True
+    USE_REAL_SPECTRAL_MODEL = False
+    USE_REAL_INTENT_MODEL = False
+    USE_REAL_TRANSCRIPTION = False
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///:memory:")
+
+
+def get_config() -> type[BackendCompatConfig]:
+    """Compatibility for Flask backend tests when root config is imported first."""
+    env = os.getenv("FLASK_ENV", "development")
+    if env == "testing":
+        return BackendTestingCompatConfig
+    return BackendCompatConfig

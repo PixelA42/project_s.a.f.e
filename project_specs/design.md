@@ -580,3 +580,171 @@ All property tests use Hypothesis with a minimum of 100 randomly generated examp
 - SQLite in-memory database for persistence tests, swapped via DATABASE_URL environment variable.
 - numpy random signal generators for audio input strategies.
 - unittest.mock for DB failure injection and external service mocking.
+
+---
+
+## Hybrid Supervised / Unsupervised Architecture
+
+### Overview
+
+Project S.A.F.E. satisfies both supervised and unsupervised learning requirements through a two-pronged inference pipeline. The supervised PyTorch spectral classifier handles known deepfake patterns; the unsupervised anomaly detector handles zero-day deepfakes and ambiguous cases that fall outside the supervised model's confident decision boundary.
+
+```
+Audio Input
+    │
+    ├──► [SUPERVISED]  SpectralCNN (PyTorch)
+    │         Trained on labeled human + AI spectrograms
+    │         Output: positive_probability ∈ [0, 1]
+    │
+    ├──► [UNSUPERVISED]  Autoencoder + Isolation Forest
+    │         Trained ONLY on authentic (Class 0) spectrograms
+    │         Output: reconstruction_error, isolation_score, anomaly_flag
+    │
+    └──► [SMART ROUTING]  Uncertainty-aware decision logic
+              │
+              ├── p < 0.35 or p > 0.65  →  Trust supervised label (HUMAN / AI)
+              │
+              └── 0.35 ≤ p ≤ 0.65  →  Uncertain zone: use unsupervised signal
+                        │
+                        ├── anomaly_flag = True   →  UNCERTAIN_ANOMALY (flag for review)
+                        ├── anomaly_flag = False  →  HUMAN (pass through)
+                        └── unsupervised not ready →  UNCERTAIN (queue for review)
+```
+
+---
+
+### Component: Unsupervised Anomaly Detector
+
+**Script:** `train_unsupervised.py`
+
+**Key design constraint:** The unsupervised model is trained **exclusively on Class 0 (authentic/human) samples**. No deepfake labels are used during training. This means the model learns the baseline distribution of real human speech and flags anything that deviates from it as anomalous — including zero-day deepfake techniques that the supervised model has never seen.
+
+**Two complementary sub-models:**
+
+| Sub-model | Type | What it learns | Anomaly signal |
+|---|---|---|---|
+| SpectralAutoencoder | PyTorch fully-connected autoencoder | Compress and reconstruct authentic spectrogram features | High reconstruction error = input deviates from real-speech manifold |
+| IsolationForest | scikit-learn ensemble | Isolate outliers in authentic feature space | Negative score / -1 prediction = anomalous sample |
+
+**Architecture — SpectralAutoencoder:**
+- Input: flattened 64×64 grayscale spectrogram feature vector (4096 dims)
+- Encoder: Linear → BatchNorm → ReLU → Dropout → Linear → ReLU → Linear (bottleneck)
+- Bottleneck: configurable latent dimension (default 32)
+- Decoder: mirrors encoder in reverse
+- Loss: Mean Squared Error (MSE) on reconstruction
+- Trained with Adam optimizer + Cosine Annealing LR scheduler
+
+**Anomaly threshold calibration:**
+After training, reconstruction errors are computed on the authentic training set. The anomaly threshold is set at `mean + 2.0 × std` of those errors. Samples exceeding this threshold at inference time are flagged as anomalous. The multiplier is configurable via `--std-multiplier`.
+
+**Artifacts produced by `train_unsupervised.py`:**
+
+| File | Contents |
+|---|---|
+| `models/unsupervised_autoencoder.pt` | SpectralAutoencoder weights + calibrated thresholds |
+| `models/unsupervised_isolation_forest.joblib` | Fitted IsolationForest |
+| `models/unsupervised_scaler.joblib` | StandardScaler fitted on authentic features |
+| `models/unsupervised_training_report.json` | Training metadata, loss, thresholds |
+
+**Training command:**
+```powershell
+python train_unsupervised.py
+# Optional flags:
+python train_unsupervised.py --epochs 100 --latent-dim 64 --std-multiplier 2.5
+```
+
+---
+
+### Component: Hybrid Inference Pipeline
+
+**Files:** `quick_predict.py` (CLI), `api.py` (HTTP endpoint `/detect-audio`)
+
+**Runtime class:** `UnsupervisedAnomalyDetector` (defined in `train_unsupervised.py`)
+
+The `UnsupervisedAnomalyDetector` class is the runtime interface. It loads all three artifacts at startup and exposes a single `score(spectrogram_path)` method that returns:
+
+```python
+{
+    "reconstruction_error": float,   # AE MSE — lower = more authentic
+    "isolation_score":      float,   # IF score — more negative = more anomalous
+    "anomaly_flag":         bool,    # True if either model flags the sample
+    "ae_anomaly":           bool,    # Autoencoder-specific flag
+    "if_anomaly":           bool,    # Isolation Forest-specific flag
+    "unsupervised_ready":   bool,    # False when artifacts are not loaded
+}
+```
+
+The detector gracefully degrades: if the unsupervised artifacts have not been trained yet, `is_ready` returns `False` and uncertain samples are queued for manual review without unsupervised tiebreaking.
+
+---
+
+### Component: Smart Uncertainty Routing
+
+**Location:** `quick_predict.py → run_hybrid_inference()`, `api.py → detect_audio()`
+
+The uncertainty zone is defined as supervised probability ∈ [0.35, 0.65]. This range is configurable via the `UncertaintyQueue` constructor parameters.
+
+**Decision table:**
+
+| Supervised probability | Unsupervised available | Anomaly flag | Routing decision | Action |
+|---|---|---|---|---|
+| < 0.35 | any | any | HUMAN | Return HUMAN directly |
+| > 0.65 | any | any | AI | Return AI directly |
+| 0.35–0.65 | No | — | UNCERTAIN | Queue for manual review |
+| 0.35–0.65 | Yes | False | HUMAN | No anomaly detected; classify as HUMAN |
+| 0.35–0.65 | Yes | True | UNCERTAIN_ANOMALY | Anomaly detected; flag for manual review |
+
+All samples that enter the uncertainty zone are added to the `UncertaintyQueue` regardless of the unsupervised outcome. The queue item records both the supervised probability and the unsupervised scores for human reviewers.
+
+**API response fields added by the hybrid pipeline:**
+
+| Field | Type | Description |
+|---|---|---|
+| `routing_decision` | string | HUMAN, AI, UNCERTAIN, or UNCERTAIN_ANOMALY |
+| `routing_reason` | string | Human-readable explanation of the routing decision |
+| `supervised_probability` | float | Raw supervised model output [0, 1] |
+| `is_uncertain` | bool | True if probability was in [0.35, 0.65] |
+| `reconstruction_error` | float | Autoencoder MSE on the input spectrogram |
+| `isolation_score` | float | Isolation Forest anomaly score |
+| `anomaly_flag` | bool | True if either unsupervised model flagged the sample |
+| `ae_anomaly` | bool | Autoencoder-specific anomaly flag |
+| `if_anomaly` | bool | Isolation Forest-specific anomaly flag |
+| `unsupervised_ready` | bool | False when unsupervised artifacts are not loaded |
+| `queue_item_id` | string or null | UUID of the uncertainty queue item, if created |
+
+---
+
+### Why This Satisfies Both Learning Paradigms
+
+**Supervised requirement:** The PyTorch SpectralCNN is trained on labeled human and AI spectrogram data using binary cross-entropy loss. It directly optimises for the classification boundary between real and synthetic speech.
+
+**Unsupervised requirement:** The SpectralAutoencoder and IsolationForest are trained with no labels whatsoever — only the authentic (Class 0) feature distribution. They satisfy the unsupervised learning requirement by learning the structure of real speech without any supervision signal. This also provides genuine value: because the unsupervised model has never seen any deepfake examples, it can detect novel synthesis techniques that the supervised model was not trained on (zero-day deepfakes).
+
+**Complementary strengths:**
+
+| Scenario | Supervised model | Unsupervised model | Outcome |
+|---|---|---|---|
+| Known deepfake technique | High confidence AI | High reconstruction error | Both agree → AI |
+| Known authentic speech | High confidence HUMAN | Low reconstruction error | Both agree → HUMAN |
+| Novel/zero-day deepfake | Low confidence (uncertain) | High reconstruction error | Unsupervised catches it → UNCERTAIN_ANOMALY |
+| Ambiguous authentic speech | Low confidence (uncertain) | Low reconstruction error | Unsupervised clears it → HUMAN |
+
+---
+
+### Training Order
+
+Run scripts in this order for a complete hybrid setup:
+
+```powershell
+# 1. Generate spectrograms and labels.csv
+python audio_pipeline.py
+
+# 2. Train supervised + semi-supervised + K-Means models
+python train_model.py
+
+# 3. Train unsupervised anomaly detector (Class 0 only)
+python train_unsupervised.py
+
+# 4. Run hybrid inference on a single file
+python quick_predict.py --input path/to/audio.wav
+```

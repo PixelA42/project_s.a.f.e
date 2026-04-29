@@ -9,10 +9,10 @@ Docs:     https://developers.deepgram.com/docs/getting-started-with-pre-recorded
 """
 import io
 import json
+import tempfile
 import numpy as np
 import httpx
 from flask import current_app
-
 
 # ── Public entry point ────────────────────────────────────────────────
 def analyze(audio_bytes: bytes | None, transcript: str | None = None) -> float:
@@ -41,22 +41,17 @@ def analyze(audio_bytes: bytes | None, transcript: str | None = None) -> float:
 # ── Teammate model ────────────────────────────────────────────────────
 def _run_teammate_model(model, audio_bytes: bytes) -> float:
     """
-    Runs the trained sklearn/torch model your teammate saved as .pkl.
-    Expects model.predict([features]) -> float  OR
-            model.predict_proba([features]) -> ndarray
-
-    To plug in your teammate's model:
-        1. They save: joblib.dump(pipeline, "app/models/weights/spectral_model.pkl")
-        2. Set USE_REAL_SPECTRAL_MODEL=1 in .env
-        3. Set SPECTRAL_MODEL_PATH= the path above
+    Runs the trained PyTorch model checkpoint.
+    Uses the same deep-learning tensor preprocessing path as training/evaluation.
     """
-    features = _extract_mfcc_features(audio_bytes)
-    if features is None:
-        return _mock_score(None)
     try:
-        if hasattr(model, "predict_proba"):
-            return float(model.predict_proba([features])[0][1] * 100)
-        return float(model.predict([features])[0])
+        from coreML.torch_inference import infer_audio_probability
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_file.flush()
+            probability = infer_audio_probability(model, temp_file.name, device="cpu")
+        return float(probability * 100.0)
     except Exception as e:
         current_app.logger.error(f"[Spectral] Teammate model failed: {e}")
         return _mock_score(None)
@@ -198,26 +193,6 @@ def transcribe_with_deepgram(audio_bytes: bytes) -> dict | None:
 
 
 # ── MFCC feature extraction ───────────────────────────────────────────
-def _extract_mfcc_features(audio_bytes: bytes) -> np.ndarray | None:
-    """
-    Extracts a 40-dimensional MFCC mean vector from raw audio bytes.
-    This is the feature vector expected by most teammate sklearn pipelines.
-    If your teammate used a different feature set, adjust n_mfcc here.
-    """
-    try:
-        import librosa
-        import soundfile as sf
-
-        audio, sr = sf.read(io.BytesIO(audio_bytes))
-        if audio.ndim > 1:
-            audio = audio.mean(axis=1)
-        mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
-        return mfccs.mean(axis=1)   # shape: (40,)
-    except Exception as e:
-        current_app.logger.warning(f"[Spectral] MFCC extraction failed: {e}")
-        return None
-
-
 # ── Mock fallback ─────────────────────────────────────────────────────
 def _mock_score(hint: str | None) -> float:
     rng = np.random.default_rng(seed=abs(hash(hint or "spectral")) % (2 ** 31))

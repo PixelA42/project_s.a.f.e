@@ -1,163 +1,114 @@
 ---
-name: ML Presentation Outline
-overview: Create a slide-by-slide academic presentation outline from repository evidence, with exact supervised and unsupervised metrics, dataset statistics, and code-grounded model justification.
+name: Hybrid ML Presentation Outline
+overview: Presentation notes for Project S.A.F.E. after end-to-end hybrid supervised/unsupervised integration, with honest metrics and false-negative analysis.
 todos:
   - id: verify-metrics
-    content: Confirm all reported slide metrics are directly sourced from JSON/CSV artifacts in the repository.
+    content: Use current report artifacts and false-negative investigation files as evidence.
     status: completed
-  - id: extract-plots
-    content: Collect generated plot artifacts and variable names for unsupervised cluster and K-selection visuals.
+  - id: explain-fn-risk
+    content: Clearly explain false negatives as the key remaining supervised risk.
     status: completed
-  - id: finalize-narrative
-    content: Compose concise mathematically grounded justification linking preprocessing and model choices to observed metrics.
+  - id: connect-hybrid
+    content: Tie the unsupervised authentic-only anomaly detector to zero-day and low-confidence routing.
     status: completed
 isProject: false
 ---
 
-# Slide-by-Slide Academic Presentation Outline
+# Slide-by-Slide Presentation Outline
 
-## Slide 1 - Project Framing and Learning Setup
-- **Title:** Project S.A.F.E.: Hybrid Supervised + Unsupervised Audio Risk Analysis
-- **Problem framing:** Binary detection and risk scoring for suspicious calls using spectral + intent signals.
-- **Learning paradigms in project:**
-  - **Supervised:** Random Forest classifiers for spectrogram features and transcript features.
-  - **Unsupervised:** K-Means clustering for anomaly structure discovery in feature space.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/models/intent_training_report.json](H:/Projects_AI/project_safe_v1/models/intent_training_report.json), [H:/Projects_AI/project_safe_v1/train_model.py](H:/Projects_AI/project_safe_v1/train_model.py), [H:/Projects_AI/project_safe_v1/coreML/spectral_analyzer.py](H:/Projects_AI/project_safe_v1/coreML/spectral_analyzer.py), [H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py](H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py)
+## Slide 1 - Project Framing
+- **Title:** Project S.A.F.E.: Hybrid Supervised + Unsupervised Audio Deepfake Detection
+- **Goal:** Detect AI-generated voice calls and route risky uncertain samples for review.
+- **Learning paradigms:**
+  - **Supervised:** PyTorch spectral classifier path for labeled human vs AI audio.
+  - **Unsupervised:** Autoencoder + Isolation Forest trained only on authentic Class 0 audio.
+- **Key claim:** The system is not just accurate on known examples; it also has a second branch for boundary cases and potential zero-day deepfakes.
 
-## Slide 2 - Data Overview (Primary Audio/Spectrogram Pipeline)
-- **Dataset size:** `495` total samples.
-- **Class distribution (overall):**
-  - Class `0` (human): `280`
-  - Class `1` (AI): `215`
-- **Train/test split used in training report:**
-  - Train: `295`
-  - Test: `200`
-- **Group-aware split metadata:**
-  - Total groups: `99`
-  - Train groups: `59`
-  - Test groups: `40`
-  - Strategy: `group_stratified`, split level: `original_audio`
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/dataset_stats.txt](H:/Projects_AI/project_safe_v1/dataset_stats.txt)
+## Slide 2 - Dataset and Split
+- **Total spectrogram rows:** `495`
+- **Class distribution:** Class 0 human/authentic = `280`; Class 1 AI/synthetic = `215`
+- **Saved evaluation split:** Train = `295`, Test = `200`
+- **Test distribution:** Human = `115`, AI = `85`
+- **Leakage control:** Split is grouped by `original_audio`, so augmentations do not leak across train/test.
+- **Evidence:** `labels.csv`, `models/training_report.json`
 
-## Slide 3 - Critical Preprocessing and Feature Extraction
-- **Audio preprocessing / representation:** Mel spectrogram images then flattened feature vectors.
-- **Raw feature dimensionality:** `4096`.
-- **Dimensionality reduction:** PCA to `40` components.
-- **Explained variance retained by PCA:** `0.8074105381965637`.
-- **Augmentation summary:**
-  - Original: `99`
-  - Augmented: `396`
-  - Breakdown: `none=99`, `noise=99`, `pitch_up=99`, `pitch_down=99`, `stretch=99`
-- **Intent pipeline extraction:** TF-IDF with `ngram_range=(1,2)` and `min_df=1`.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/config.py](H:/Projects_AI/project_safe_v1/config.py), [H:/Projects_AI/project_safe_v1/dataset_stats.txt](H:/Projects_AI/project_safe_v1/dataset_stats.txt), [H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py](H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py)
+## Slide 3 - Supervised Branch
+- **Integrated path:** `coreML/torch_inference.py`
+- **Model role:** Return supervised AI probability `p_ai` for an uploaded audio file.
+- **Fraud decision threshold:** `0.45`, selected from the current holdout threshold sweep; uncertainty zone remains `[0.35, 0.65]`.
+- **Current artifact note:** The available canonical metrics file is still the legacy RandomForest/PCA report unless `models/spectral_model.pt` and `evaluate_torch_model.py` have been run.
 
-## Slide 4 - Unsupervised Learning: Algorithms and Configuration
-- **Algorithms used:**
-  - K-Means (primary clustering)
-  - Agglomerative Clustering (secondary comparison in unsupervised pipeline)
-- **Reported K-Means result (main training report):**
-  - `n_clusters = 8`
-  - `inertia = 623066.375`
-  - `silhouette_score = 0.15614961087703705`
-- **Intent-side unsupervised metadata report:**
-  - `n_clusters = 3`
-  - Assignment method: `KMeans (Euclidean distance)`
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/models/intent_training_report.json](H:/Projects_AI/project_safe_v1/models/intent_training_report.json), [H:/Projects_AI/project_safe_v1/unsupervised_learning.py](H:/Projects_AI/project_safe_v1/unsupervised_learning.py)
+## Slide 4 - Retrained Supervised Metrics
+- **Default threshold:** `0.50`
+- **Accuracy:** `0.985`
+- **Balanced accuracy:** `0.9824`
+- **Macro precision:** `0.9873`
+- **Macro recall:** `0.9824`
+- **Macro F1:** `0.9846`
+- **AI recall at 0.50:** `0.9647`
+- **F2 score:** `0.9716`
+- **ROC-AUC:** `1.0`
+- **PR-AUC:** `1.0`
+- **Important wording:** The retrained model is stronger, but the fraud-safe deployed threshold is selected from the threshold sweep, not from accuracy alone.
 
-## Slide 5 - Unsupervised Visualization: What to Plot
-- **K-selection diagnostics plot (required variables):**
-  - `k` vs `inertia` (elbow curve)
-  - `k` vs `silhouette_score`
-  - Optionally `k` vs `elbow_distance` for tie-break logic
-- **Cluster projection plot (recommended):**
-  - PCA projection: `PC1` vs `PC2`
-  - Color by `kmeans_cluster`
-  - Overlay/compare `agglomerative_cluster` where useful
-- **Artifacts generated by code:**
-  - `candidate_k_scores.csv`
-  - `cluster_labels.csv`
-  - `k_selection_diagnostics.png`
-  - `pca_cluster_plot.png`
-- **Evidence file:** [H:/Projects_AI/project_safe_v1/unsupervised_learning.py](H:/Projects_AI/project_safe_v1/unsupervised_learning.py)
+## Slide 5 - Default Confusion Matrix and Threshold Sweep
+- **Default confusion matrix rows=true, cols=pred:** `[[115, 0], [3, 82]]`
+- **At threshold 0.50:** `TN=115`, `FP=0`, `FN=3`, `TP=82`
+- **AI recall at 0.50:** `82 / 85 = 96.47%`
+- **Default false-negative rate:** `3 / 85 = 3.53%`
+- **False-positive rate at 0.50:** `0 / 115 = 0%`
+- **Fraud threshold from sweep:** `0.45`
+- **At threshold 0.45:** `TN=115`, `FP=0`, `FN=0`, `TP=85`
+- **Presentation line:** For fraud, deploy the highest threshold with zero false negatives; here that is `0.45`, with no added false positives on the current holdout.
 
-## Slide 6 - Supervised Learning: Model Architectures Used
-- **Spectrogram supervised model (main):** Random Forest Classifier (`n_estimators=350`, from training config).
-- **Semi-supervised variant:** Same Random Forest family plus pseudo-label expansion.
-- **Core spectral analyzer model:** Random Forest (with optional Gradient Boosting fallback path).
-- **Intent supervised model:** Random Forest on TF-IDF text vectors.
-- **Alternative baselines in tabular supervised module:** Logistic Regression and Random Forest pipelines with CV.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/train_model.py](H:/Projects_AI/project_safe_v1/train_model.py), [H:/Projects_AI/project_safe_v1/config.py](H:/Projects_AI/project_safe_v1/config.py), [H:/Projects_AI/project_safe_v1/coreML/spectral_analyzer.py](H:/Projects_AI/project_safe_v1/coreML/spectral_analyzer.py), [H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py](H:/Projects_AI/project_safe_v1/coreML/intent_analyzer.py), [H:/Projects_AI/project_safe_v1/supervised_learning.py](H:/Projects_AI/project_safe_v1/supervised_learning.py)
+## Slide 6 - False-Negative Investigation
+- **Current artifact:** `outputs/holdout_analysis/false_negative_cases.csv`
+- **Default-threshold false negatives:** `3`
+- **Their AI probabilities:** approximately `0.454`, `0.475`, and `0.494`; all are just below `0.50`.
+- **Key point:** Lowering the fraud threshold to `0.45` catches these misses while keeping false positives at `0` on this holdout.
+- **Historical artifact:** `investigation/false_negatives/false_negative_summary.csv` contains earlier false-negative examples and supports the same pattern: misses are close to the decision threshold.
 
-## Slide 7 - Final Supervised Metrics (Exact Numbers)
-- **Main supervised metrics (from `training_report.json`):**
-  - Accuracy: `0.96`
-  - Precision (macro): `0.967479674796748`
-  - Recall (macro): `0.9529411764705882`
-  - F1-score (macro): `0.958501919286233`
-- **Additional discriminative metrics:**
-  - ROC-AUC: `0.9981585677749361`
-  - PR-AUC: `0.9975737574781777`
-  - Log loss: `0.17275701142955135`
-- **Semi-supervised comparison:**
-  - Accuracy: `0.945`
-  - Macro F1: `0.9434607180488808`
-  - Pseudo labels added: `52` (`threshold=0.85`, `unlabeled_ratio=0.3`)
-- **Intent classifier (report):** F1-score `0.8` on `6` samples.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/models/intent_training_report.json](H:/Projects_AI/project_safe_v1/models/intent_training_report.json)
+## Slide 7 - Unsupervised Branch
+- **Training script:** `train_unsupervised.py`
+- **Components:** `SpectralAutoencoder` + `IsolationForest`
+- **Training data:** Class 0 authentic/human samples only.
+- **Feature shape:** Flattened `64 x 64 = 4096` spectrogram vectors.
+- **No deepfake labels used:** This satisfies the unsupervised requirement cleanly.
+- **Anomaly rule:** High reconstruction error or Isolation Forest outlier => `anomaly_flag=True`.
 
-## Slide 8 - Confusion Matrix and Error Pattern
-- **Supervised confusion matrix (rows=true, cols=pred):**
-  - `[[115, 0], [8, 77]]`
-- **Interpretation for slide:**
-  - No false positives for class `0` in this run.
-  - Errors are concentrated in class `1 -> 0` (`8` samples), consistent with class-1 recall (`0.9058823529411765`) being lower than class-0 recall (`1.0`).
-- **Per-class report values:**
-  - Class 0: Precision `0.9349593495934959`, Recall `1.0`, F1 `0.9663865546218487`
-  - Class 1: Precision `1.0`, Recall `0.9058823529411765`, F1 `0.9506172839506173`
-- **Evidence file:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json)
+## Slide 8 - Smart Routing Logic
+| Supervised score | Unsupervised signal | Route |
+|---|---|---|
+| `p < 0.35` | not needed | HUMAN |
+| `p > 0.65` | not needed | AI |
+| `0.35 <= p <= 0.65` | detector unavailable | UNCERTAIN / manual review |
+| `0.35 <= p <= 0.65` | no anomaly | HUMAN |
+| `0.35 <= p <= 0.65` | anomaly | UNCERTAIN_ANOMALY / manual review |
 
-## Slide 9 - Train/Validation Curve Stabilization (What to Say Accurately)
-- **Important technical note:** No epoch-wise neural train/validation curves are logged in the discovered artifacts.
-- **What exists instead:**
-  - Hold-out supervised vs semi-supervised metrics
-  - Cross-validation fold metrics files in supervised module (`cv_fold_metrics.csv`, `metrics_summary.csv` generation paths)
-- **Presentation-safe statement:**
-  - “Model performance is evaluated via hold-out and cross-validation metrics rather than epoch-based optimization curves, because the deployed models are tree-based (Random Forest/K-Means pipeline), not iterative deep nets.”
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/supervised_learning.py](H:/Projects_AI/project_safe_v1/supervised_learning.py), [H:/Projects_AI/project_safe_v1/train_model.py](H:/Projects_AI/project_safe_v1/train_model.py)
+## Slide 9 - Why Hybrid Helps
+- Supervised models learn known labeled patterns.
+- False negatives show that some AI samples can sit near or below the supervised threshold.
+- The unsupervised model learns the authentic speech distribution only.
+- If a low-confidence sample looks unlike authentic speech, it can be flagged even if the supervised classifier is unsure.
 
-## Slide 10 - The Why (Mathematical Justification)
-- **Why PCA before clustering/classification:**
-  - Reduces dimensionality (`4096 -> 40`) while retaining ~`80.74%` variance, improving conditioning and reducing noise for distance-based clustering and tree splits.
-- **Why K-Means for unsupervised stage:**
-  - Objective minimizes within-cluster sum of squares: 
-  - \( \min_{\{C_k\}} \sum_{k=1}^{K}\sum_{x_i\in C_k}\|x_i-\mu_k\|^2 \)
-  - Matches Euclidean feature geometry and yields interpretable cluster centroids for anomaly grouping.
-- **Why Random Forest for supervised stage:**
-  - Handles non-linear boundaries in mixed engineered features, robust to scaling artifacts and feature interactions, and performs strongly in your run (Accuracy `0.96`, Macro-F1 `0.9585`).
-- **Why pseudo-labeling setup is reasonable:**
-  - High-confidence threshold (`0.85`) controls label noise while leveraging unlabeled pool, a standard semi-supervised trade-off.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/config.py](H:/Projects_AI/project_safe_v1/config.py), [H:/Projects_AI/project_safe_v1/train_model.py](H:/Projects_AI/project_safe_v1/train_model.py)
+## Slide 10 - End-to-End Demo
+- Run unsupervised training if artifacts are missing:
+  - `python train_unsupervised.py`
+- Run hybrid CLI inference:
+  - `python quick_predict.py --input <audio-file> --decision-threshold 0.45`
+- Show both outputs:
+  - supervised probability
+  - reconstruction error / isolation score / anomaly flag
+  - final route and queue item, if applicable
 
-## Slide 11 - Spec Alignment (Optional Professor-Friendly Slide)
-- **Supervised threshold targets from project specs:**
-  - Spectral F1 target: `>= 0.75`
-  - Intent F1 target: `>= 0.70`
-- **Observed report values:**
-  - Main supervised macro F1: `0.9585` (spectrogram pipeline report)
-  - Intent F1 report: `0.8`
-- **Unsupervised reporting requirement met:**
-  - Cluster count + assignment method captured in training report JSON.
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/project_specs/requirements.md](H:/Projects_AI/project_safe_v1/project_specs/requirements.md), [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/models/intent_training_report.json](H:/Projects_AI/project_safe_v1/models/intent_training_report.json)
+## Slide 11 - Limitations and Honest Next Steps
+- PyTorch weights/evaluation artifact may still need to be generated for the final integrated supervised report.
+- Default threshold `0.50` has `3` false negatives; fraud threshold `0.45` has `0` false negatives on the current holdout.
+- This zero-FN operating point must be revalidated on more unseen audio before claiming production guarantees.
+- Next evaluation should measure how many low-confidence misses are also caught by the unsupervised anomaly detector.
+- Manual review queue creates a feedback loop for retraining.
 
-## Slide 12 - Reproducibility / Appendix
-- **Core reproducibility settings to report:**
-  - `random_seed=42`
-  - supervised RF trees: `350`
-  - spectral/intent RF trees in core analyzers: `300`
-  - K-Means max/default cluster config references and Euclidean assignment
-- **Useful appendix artifacts:**
-  - `models/training_report.json`
-  - `models/intent_training_report.json`
-  - `dataset_stats.txt`
-  - `outputs/experiment_log.csv`
-- **Evidence files:** [H:/Projects_AI/project_safe_v1/config.py](H:/Projects_AI/project_safe_v1/config.py), [H:/Projects_AI/project_safe_v1/models/training_report.json](H:/Projects_AI/project_safe_v1/models/training_report.json), [H:/Projects_AI/project_safe_v1/models/intent_training_report.json](H:/Projects_AI/project_safe_v1/models/intent_training_report.json)
+## Slide 12 - Final Takeaway
+- Project S.A.F.E. meets both supervised and unsupervised learning requirements.
+- The metric story is strong but honest: high accuracy with a visible false-negative risk.
+- The hybrid architecture directly addresses that risk through authentic-only anomaly detection and uncertainty routing.

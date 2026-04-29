@@ -2,9 +2,27 @@
 Central configuration — every setting loaded from environment variables.
 """
 import os
+import importlib.util
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _load_root_settings():
+    """Expose root ML SETTINGS when this backend config shadows root config.py."""
+    root_config_path = Path(__file__).resolve().parents[1] / "config.py"
+    spec = importlib.util.spec_from_file_location("_project_safe_root_config", root_config_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load root config from {root_config_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.SETTINGS
+
+
+SETTINGS = _load_root_settings()
 
 
 class Config:
@@ -45,10 +63,10 @@ class Config:
 
     # ── Teammate ML models ─────────────────────────────────────
     SPECTRAL_MODEL_PATH: str = os.getenv(
-        "SPECTRAL_MODEL_PATH", "app/models/weights/spectral_model.pkl"
+        "SPECTRAL_MODEL_PATH", "app/models/weights/spectral_model.pt"
     )
     INTENT_MODEL_PATH: str = os.getenv(
-        "INTENT_MODEL_PATH", "app/models/weights/intent_model.pkl"
+        "INTENT_MODEL_PATH", "app/models/weights/intent_model.pt"
     )
     USE_REAL_SPECTRAL_MODEL: bool = os.getenv("USE_REAL_SPECTRAL_MODEL", "0") == "1"
 

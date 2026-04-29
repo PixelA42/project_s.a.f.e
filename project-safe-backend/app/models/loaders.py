@@ -4,7 +4,7 @@ Each teammate drops their trained model file into app/models/weights/
 and this file handles loading it safely.
 """
 import os
-import joblib
+import torch
 from flask import Flask
 
 
@@ -28,29 +28,8 @@ def load_all_models(app: Flask) -> None:
 
 def _load_model(path: str, name: str, enabled: bool):
     """
-    Loads a joblib/pickle model from disk.
+    Loads a PyTorch model checkpoint from disk via torch.load.
     Returns the model object, or None if disabled or not found.
-
-    ── HOW YOUR TEAMMATE SAVES A COMPATIBLE MODEL ──────────────────────
-    Any sklearn Pipeline, torch Module, or custom class works as long as
-    it implements a .predict(features) -> float method.
-
-    Example (sklearn):
-        import joblib
-        from sklearn.pipeline import Pipeline
-        model = Pipeline([...])
-        model.fit(X_train, y_train)
-        joblib.dump(model, "app/models/weights/spectral_model.pkl")
-
-    Example (PyTorch — wrap in a small adapter class):
-        class TorchAdapter:
-            def __init__(self, net): self.net = net
-            def predict(self, features):
-                import torch
-                t = torch.tensor(features, dtype=torch.float32)
-                return self.net(t).item()
-        joblib.dump(TorchAdapter(trained_net), "spectral_model.pkl")
-    ─────────────────────────────────────────────────────────────────────
     """
     if not enabled:
         print(f"[SAFE] {name} model: MOCK MODE (USE_REAL_{name.upper()}_MODEL=0)")
@@ -60,12 +39,14 @@ def _load_model(path: str, name: str, enabled: bool):
         print(
             f"[SAFE] WARNING: {name} model not found at '{path}'. "
             f"Falling back to mock mode. Set {name.upper()}_MODEL_PATH in .env "
-            f"and ensure the .pkl file exists."
+            f"and ensure the .pt/.pth file exists."
         )
         return None
 
     try:
-        model = joblib.load(path)
+        model = torch.load(path, map_location="cpu")
+        if hasattr(model, "eval"):
+            model.eval()
         print(f"[SAFE] {name} model loaded from {path}")
         return model
     except Exception as e:
